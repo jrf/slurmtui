@@ -436,7 +436,7 @@ impl App {
             history_search_active: false,
 
             last_refresh: Instant::now(),
-            refresh_interval: Duration::from_secs(30),
+            refresh_interval: Duration::from_secs(10),
             username,
 
             status_message: None,
@@ -463,6 +463,14 @@ impl App {
         self.refresh_history();
         self.load_partition_names();
         self.last_refresh = Instant::now();
+    }
+
+    fn switch_to_tab(&mut self, tab: Tab) {
+        if self.active_tab == tab {
+            return;
+        }
+        self.active_tab = tab;
+        self.refresh_active_tab();
     }
 
     fn refresh_active_tab(&mut self) {
@@ -589,28 +597,28 @@ impl App {
             }
             KeyCode::Tab => {
                 let next = (self.active_tab.index() + 1) % Tab::ALL.len();
-                self.active_tab = Tab::ALL[next];
+                self.switch_to_tab(Tab::ALL[next]);
                 return;
             }
             KeyCode::BackTab => {
                 let prev = (self.active_tab.index() + Tab::ALL.len() - 1) % Tab::ALL.len();
-                self.active_tab = Tab::ALL[prev];
+                self.switch_to_tab(Tab::ALL[prev]);
                 return;
             }
             KeyCode::Char('1') => {
-                self.active_tab = Tab::Jobs;
+                self.switch_to_tab(Tab::Jobs);
                 return;
             }
             KeyCode::Char('2') => {
-                self.active_tab = Tab::Nodes;
+                self.switch_to_tab(Tab::Nodes);
                 return;
             }
             KeyCode::Char('3') => {
-                self.active_tab = Tab::Submit;
+                self.switch_to_tab(Tab::Submit);
                 return;
             }
             KeyCode::Char('4') => {
-                self.active_tab = Tab::History;
+                self.switch_to_tab(Tab::History);
                 return;
             }
             KeyCode::Char('r') => {
