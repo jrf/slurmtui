@@ -1,0 +1,13 @@
+[package]
+name = "slurmtop"
+version = "0.1.0"
+edition = "2024"
+description = "A top-like terminal UI for Slurm HPC clusters"
+
+[dependencies]
+ratatui = "0.30"
+crossterm = "0.29"
+
+[profile.release]
+strip = true
+lto = true
