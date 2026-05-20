@@ -595,12 +595,12 @@ impl App {
                 self.should_quit = true;
                 return;
             }
-            KeyCode::Tab => {
+            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
                 let next = (self.active_tab.index() + 1) % Tab::ALL.len();
                 self.switch_to_tab(Tab::ALL[next]);
                 return;
             }
-            KeyCode::BackTab => {
+            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
                 let prev = (self.active_tab.index() + Tab::ALL.len() - 1) % Tab::ALL.len();
                 self.switch_to_tab(Tab::ALL[prev]);
                 return;
