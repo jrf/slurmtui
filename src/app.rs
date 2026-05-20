@@ -933,7 +933,9 @@ impl App {
             }
             KeyCode::Char('b') if self.submit_form.active_field == 0 => {
                 let start = picker_start_dir(&self.submit_form.script_path);
-                self.popup = Popup::FilePicker(FilePicker::new(start));
+                let mut picker = FilePicker::new(start);
+                picker.start_query();
+                self.popup = Popup::FilePicker(picker);
             }
             _ => {}
         }
