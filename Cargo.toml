@@ -7,6 +7,7 @@ description = "A top-like terminal UI for Slurm HPC clusters"
 [dependencies]
 ratatui = "0.30"
 crossterm = "0.29"
+nucleo-matcher = "0.3"
 
 [profile.release]
 strip = true

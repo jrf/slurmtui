@@ -107,11 +107,19 @@ pub fn render_file_picker(frame: &mut Frame, area: Rect, picker: &FilePicker) {
     frame.render_widget(Clear, popup_area);
 
     let mode = if picker.show_all { "all" } else { "scripts" };
-    let title = format!(
-        " Browse [{}]: {} (j/k:nav  Enter:open  h/Bksp:up  a:toggle  Esc:cancel) ",
-        mode,
-        picker.current_dir.display()
-    );
+    let title = if picker.query_active {
+        format!(
+            " Find [{}] in {} (Up/Down  Enter:pick  Esc:cancel) ",
+            mode,
+            picker.current_dir.display()
+        )
+    } else {
+        format!(
+            " Browse [{}]: {} (j/k:nav  Enter:open  h/Bksp:up  /:find  a:toggle  Esc:cancel) ",
+            mode,
+            picker.current_dir.display()
+        )
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(colors::BLUE))
@@ -123,6 +131,14 @@ pub fn render_file_picker(frame: &mut Frame, area: Rect, picker: &FilePicker) {
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
+    if picker.query_active {
+        render_query_mode(frame, inner, picker);
+    } else {
+        render_browse_mode(frame, inner, picker);
+    }
+}
+
+fn render_browse_mode(frame: &mut Frame, inner: Rect, picker: &FilePicker) {
     if picker.entries.is_empty() {
         let empty = Paragraph::new(Line::from(Span::styled(
             "<no matching entries — press `a` to show all files>",
@@ -167,6 +183,66 @@ pub fn render_file_picker(frame: &mut Frame, area: Rect, picker: &FilePicker) {
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, inner);
+}
+
+fn render_query_mode(frame: &mut Frame, inner: Rect, picker: &FilePicker) {
+    let chunks = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(inner);
+    let input_area = chunks[0];
+    let list_area = chunks[1];
+
+    let prompt = Line::from(vec![
+        Span::styled("> ", Style::default().fg(colors::YELLOW).add_modifier(Modifier::BOLD)),
+        Span::styled(picker.query.as_str(), Style::default().fg(colors::FG)),
+        Span::styled("▌", Style::default().fg(colors::FG)),
+    ]);
+    frame.render_widget(Paragraph::new(prompt), input_area);
+
+    if picker.query.is_empty() {
+        let hint = Paragraph::new(Line::from(Span::styled(
+            "<type to fuzzy-find files under this directory>",
+            Style::default().fg(colors::DARK5),
+        )));
+        frame.render_widget(hint, list_area);
+        return;
+    }
+
+    if picker.matches.is_empty() {
+        let empty = Paragraph::new(Line::from(Span::styled(
+            "<no matches>",
+            Style::default().fg(colors::DARK5),
+        )));
+        frame.render_widget(empty, list_area);
+        return;
+    }
+
+    let height = list_area.height as usize;
+    let total = picker.matches.len();
+    let start = if picker.selected >= height {
+        picker.selected + 1 - height
+    } else {
+        0
+    };
+    let end = (start + height).min(total);
+
+    let lines: Vec<Line> = picker.matches[start..end]
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let global_i = start + i;
+            let style = if global_i == picker.selected {
+                Style::default()
+                    .fg(colors::FG)
+                    .bg(colors::BG_HIGHLIGHT)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(colors::FG)
+            };
+            Line::from(Span::styled(m.display.as_str(), style))
+        })
+        .collect();
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, list_area);
 }
 
 pub fn render_result(frame: &mut Frame, area: Rect, success: bool, message: &str) {

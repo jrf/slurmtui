@@ -2,13 +2,23 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
+use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::widgets::TableState;
 
 use crate::slurm::{self, HistoryEntry, Job, JobDetail, PartitionInfo, SubmitForm};
 
+const WALK_CAP: usize = 10_000;
+const MATCH_LIMIT: usize = 500;
+
 pub struct PickerEntry {
     pub name: String,
     pub is_dir: bool,
+}
+
+pub struct MatchEntry {
+    pub path: PathBuf,
+    pub display: String,
 }
 
 pub struct FilePicker {
@@ -16,6 +26,13 @@ pub struct FilePicker {
     pub entries: Vec<PickerEntry>,
     pub selected: usize,
     pub show_all: bool,
+    pub query_active: bool,
+    pub query: String,
+    pub matches: Vec<MatchEntry>,
+    all_files: Vec<PathBuf>,
+    all_displays: Vec<String>,
+    walked: bool,
+    matcher: Matcher,
 }
 
 impl FilePicker {
@@ -25,6 +42,13 @@ impl FilePicker {
             entries: Vec::new(),
             selected: 0,
             show_all: false,
+            query_active: false,
+            query: String::new(),
+            matches: Vec::new(),
+            all_files: Vec::new(),
+            all_displays: Vec::new(),
+            walked: false,
+            matcher: Matcher::new(Config::DEFAULT.match_paths()),
         };
         p.reload();
         p
@@ -53,9 +77,21 @@ impl FilePicker {
             (false, true) => std::cmp::Ordering::Greater,
             _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
         });
+        self.invalidate_walk();
+    }
+
+    fn invalidate_walk(&mut self) {
+        self.all_files.clear();
+        self.all_displays.clear();
+        self.walked = false;
+        self.matches.clear();
     }
 
     pub fn enter_selected(&mut self) -> Option<PathBuf> {
+        if self.query_active && !self.query.is_empty() {
+            let m = self.matches.get(self.selected)?;
+            return Some(m.path.clone());
+        }
         let ent = self.entries.get(self.selected)?;
         let target = self.current_dir.join(&ent.name);
         if ent.is_dir {
@@ -75,26 +111,158 @@ impl FilePicker {
         }
     }
 
+    fn visible_len(&self) -> usize {
+        if self.query_active && !self.query.is_empty() {
+            self.matches.len()
+        } else {
+            self.entries.len()
+        }
+    }
+
     pub fn move_down(&mut self) {
-        if !self.entries.is_empty() {
-            self.selected = (self.selected + 1) % self.entries.len();
+        let n = self.visible_len();
+        if n > 0 {
+            self.selected = (self.selected + 1) % n;
         }
     }
 
     pub fn move_up(&mut self) {
-        if !self.entries.is_empty() {
-            self.selected = if self.selected == 0 {
-                self.entries.len() - 1
-            } else {
-                self.selected - 1
-            };
+        let n = self.visible_len();
+        if n > 0 {
+            self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+        }
+    }
+
+    pub fn jump_top(&mut self) {
+        self.selected = 0;
+    }
+
+    pub fn jump_bottom(&mut self) {
+        let n = self.visible_len();
+        if n > 0 {
+            self.selected = n - 1;
         }
     }
 
     pub fn toggle_show_all(&mut self) {
         self.show_all = !self.show_all;
         self.reload();
+        if self.query_active {
+            self.ensure_walked();
+            self.recompute_matches();
+        }
     }
+
+    pub fn start_query(&mut self) {
+        self.query_active = true;
+        self.query.clear();
+        self.selected = 0;
+        self.ensure_walked();
+    }
+
+    pub fn cancel_query(&mut self) {
+        self.query_active = false;
+        self.query.clear();
+        self.matches.clear();
+        self.selected = 0;
+    }
+
+    pub fn query_push(&mut self, c: char) {
+        self.query.push(c);
+        self.recompute_matches();
+        self.selected = 0;
+    }
+
+    pub fn query_pop(&mut self) -> bool {
+        // Returns true if query mode should remain active.
+        if self.query.pop().is_some() {
+            self.recompute_matches();
+            self.selected = 0;
+            true
+        } else {
+            self.query_active = false;
+            self.matches.clear();
+            false
+        }
+    }
+
+    fn ensure_walked(&mut self) {
+        if self.walked {
+            return;
+        }
+        self.all_files = walk_files(&self.current_dir, self.show_all, WALK_CAP);
+        self.all_displays = self
+            .all_files
+            .iter()
+            .map(|p| {
+                p.strip_prefix(&self.current_dir)
+                    .unwrap_or(p)
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        self.walked = true;
+    }
+
+    fn recompute_matches(&mut self) {
+        self.matches.clear();
+        if self.query.is_empty() {
+            return;
+        }
+        let pattern = Pattern::parse(&self.query, CaseMatching::Ignore, Normalization::Smart);
+        let mut scored: Vec<(u32, usize)> = Vec::with_capacity(self.all_displays.len());
+        let mut buf = Vec::new();
+        for (i, display) in self.all_displays.iter().enumerate() {
+            let haystack = Utf32Str::new(display, &mut buf);
+            if let Some(score) = pattern.score(haystack, &mut self.matcher) {
+                scored.push((score, i));
+            }
+        }
+        scored.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        for (_, idx) in scored.into_iter().take(MATCH_LIMIT) {
+            self.matches.push(MatchEntry {
+                path: self.all_files[idx].clone(),
+                display: self.all_displays[idx].clone(),
+            });
+        }
+    }
+}
+
+fn walk_files(root: &Path, show_all: bool, cap: usize) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        if out.len() >= cap {
+            break;
+        }
+        let read = match std::fs::read_dir(&dir) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        for ent in read.flatten() {
+            let name = ent.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            if matches!(name.as_str(), "target" | "node_modules" | "__pycache__") {
+                continue;
+            }
+            let path = ent.path();
+            let is_dir = ent.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            if is_dir {
+                stack.push(path);
+            } else {
+                if !show_all && !looks_like_script(&name) {
+                    continue;
+                }
+                out.push(path);
+                if out.len() >= cap {
+                    break;
+                }
+            }
+        }
+    }
+    out
 }
 
 fn looks_like_script(name: &str) -> bool {
@@ -521,55 +689,103 @@ impl App {
                 }
                 _ => {}
             },
-            Popup::FilePicker(_) => match key.code {
-                KeyCode::Esc | KeyCode::Char('q') => {
-                    self.popup = Popup::None;
-                }
-                KeyCode::Char('j') | KeyCode::Down => {
-                    if let Popup::FilePicker(ref mut p) = self.popup {
-                        p.move_down();
-                    }
-                }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    if let Popup::FilePicker(ref mut p) = self.popup {
-                        p.move_up();
-                    }
-                }
-                KeyCode::Char('g') => {
-                    if let Popup::FilePicker(ref mut p) = self.popup {
-                        p.selected = 0;
-                    }
-                }
-                KeyCode::Char('G') => {
-                    if let Popup::FilePicker(ref mut p) = self.popup {
-                        if !p.entries.is_empty() {
-                            p.selected = p.entries.len() - 1;
+            Popup::FilePicker(_) => {
+                let query_active = matches!(&self.popup, Popup::FilePicker(p) if p.query_active);
+                if query_active {
+                    match key.code {
+                        KeyCode::Esc => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.cancel_query();
+                            }
                         }
+                        KeyCode::Up => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.move_up();
+                            }
+                        }
+                        KeyCode::Down => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.move_down();
+                            }
+                        }
+                        KeyCode::Enter => {
+                            let picked = if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.enter_selected()
+                            } else {
+                                None
+                            };
+                            if let Some(path) = picked {
+                                self.popup = Popup::None;
+                                self.apply_picked_script(path);
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.query_pop();
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.query_push(c);
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    match key.code {
+                        KeyCode::Esc | KeyCode::Char('q') => {
+                            self.popup = Popup::None;
+                        }
+                        KeyCode::Char('j') | KeyCode::Down => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.move_down();
+                            }
+                        }
+                        KeyCode::Char('k') | KeyCode::Up => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.move_up();
+                            }
+                        }
+                        KeyCode::Char('g') => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.jump_top();
+                            }
+                        }
+                        KeyCode::Char('G') => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.jump_bottom();
+                            }
+                        }
+                        KeyCode::Char('h') | KeyCode::Backspace => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.go_up();
+                            }
+                        }
+                        KeyCode::Char('a') => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.toggle_show_all();
+                            }
+                        }
+                        KeyCode::Char('/') => {
+                            if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.start_query();
+                            }
+                        }
+                        KeyCode::Enter => {
+                            let picked = if let Popup::FilePicker(ref mut p) = self.popup {
+                                p.enter_selected()
+                            } else {
+                                None
+                            };
+                            if let Some(path) = picked {
+                                self.popup = Popup::None;
+                                self.apply_picked_script(path);
+                            }
+                        }
+                        _ => {}
                     }
                 }
-                KeyCode::Char('h') | KeyCode::Backspace => {
-                    if let Popup::FilePicker(ref mut p) = self.popup {
-                        p.go_up();
-                    }
-                }
-                KeyCode::Char('a') => {
-                    if let Popup::FilePicker(ref mut p) = self.popup {
-                        p.toggle_show_all();
-                    }
-                }
-                KeyCode::Enter => {
-                    let picked = if let Popup::FilePicker(ref mut p) = self.popup {
-                        p.enter_selected()
-                    } else {
-                        None
-                    };
-                    if let Some(path) = picked {
-                        self.popup = Popup::None;
-                        self.apply_picked_script(path);
-                    }
-                }
-                _ => {}
-            },
+            }
             Popup::None => {}
         }
     }
