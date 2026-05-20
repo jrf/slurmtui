@@ -50,6 +50,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Popup::FilePicker(picker) => {
             popup::render_file_picker(frame, frame.area(), picker);
         }
+        Popup::LogView(view) => {
+            popup::render_log_view(frame, frame.area(), view);
+        }
     }
 }
 
@@ -100,6 +103,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
                 vec![
                     key_span("j/k"), desc_span(":Nav  "),
                     key_span("Enter"), desc_span(":Detail  "),
+                    key_span("o/O"), desc_span(":Log  "),
                     key_span("d"), desc_span(":Cancel  "),
                     key_span("/"), desc_span(":Search  "),
                     key_span("f"), desc_span(":Filter  "),
@@ -150,6 +154,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
                 vec![
                     key_span("j/k"), desc_span(":Nav  "),
                     key_span("Enter"), desc_span(":Detail  "),
+                    key_span("o/O"), desc_span(":Log  "),
                     key_span("/"), desc_span(":Search  "),
                     key_span("f"), desc_span(":Range  "),
                     key_span("s/S"), desc_span(":Sort  "),

@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Row, Table, Wrap},
 };
 
-use crate::app::FilePicker;
+use crate::app::{FilePicker, LogView};
 use crate::colors;
 use crate::slurm::JobDetail;
 
@@ -99,6 +99,64 @@ pub fn render_confirm(frame: &mut Frame, area: Rect, message: &str) {
     ];
 
     let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, inner);
+}
+
+pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
+    let popup_area = centered_rect(85, 85, area);
+    frame.render_widget(Clear, popup_area);
+
+    let follow_label = if view.follow { "ON" } else { "off" };
+    let title_path = if view.path.is_empty() {
+        "(no path)".to_string()
+    } else {
+        view.path.clone()
+    };
+    let title = format!(
+        " Log [{}] job {} — {} (follow:{}  f:toggle  r:reload  t:switch  j/k:scroll  g/G:top/bot  q:close) ",
+        view.kind.label(),
+        view.job_id,
+        title_path,
+        follow_label
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(colors::BLUE))
+        .title(Span::styled(
+            title,
+            Style::default().fg(colors::BLUE).add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    if let Some(err) = &view.error {
+        let msg = Paragraph::new(Line::from(Span::styled(
+            err.as_str(),
+            Style::default().fg(colors::RED),
+        )))
+        .wrap(Wrap { trim: false });
+        frame.render_widget(msg, inner);
+        return;
+    }
+
+    if view.contents.is_empty() {
+        let msg = Paragraph::new(Line::from(Span::styled(
+            "<empty>",
+            Style::default().fg(colors::DARK5),
+        )));
+        frame.render_widget(msg, inner);
+        return;
+    }
+
+    let lines: Vec<Line> = view
+        .contents
+        .lines()
+        .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(colors::FG))))
+        .collect();
+    let paragraph = Paragraph::new(lines)
+        .scroll((view.scroll, 0))
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
 }
 

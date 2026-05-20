@@ -371,6 +371,90 @@ pub fn fetch_job_detail(job_id: &str) -> Result<JobDetail, String> {
     Ok(JobDetail { fields })
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LogKind {
+    StdOut,
+    StdErr,
+}
+
+impl LogKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            LogKind::StdOut => "stdout",
+            LogKind::StdErr => "stderr",
+        }
+    }
+
+    pub fn flip(self) -> Self {
+        match self {
+            LogKind::StdOut => LogKind::StdErr,
+            LogKind::StdErr => LogKind::StdOut,
+        }
+    }
+}
+
+pub fn fetch_log_path(job_id: &str, kind: LogKind) -> Result<String, String> {
+    let key = match kind {
+        LogKind::StdOut => "StdOut",
+        LogKind::StdErr => "StdErr",
+    };
+    if let Ok(detail) = fetch_job_detail(job_id) {
+        for (k, v) in &detail.fields {
+            if k == key && !v.is_empty() && v != "(null)" {
+                return Ok(v.clone());
+            }
+        }
+    }
+    let format_arg = format!("--format=JobID,{}", key);
+    let job_arg = format!("--jobs={}", job_id);
+    let output = run_command(
+        "sacct",
+        &["--parsable2", "--noheader", &format_arg, &job_arg],
+    )?;
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split('|').collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        let id = parts[0];
+        if id.contains('.') {
+            continue;
+        }
+        let path = parts[1].trim();
+        if !path.is_empty() && path != "(null)" {
+            return Ok(path.to_string());
+        }
+    }
+    Err(format!("no {} path found for job {}", key, job_id))
+}
+
+pub fn read_log_tail(path: &Path, max_lines: usize, max_bytes: u64) -> Result<String, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| format!("open {}: {}", path.display(), e))?;
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let start = len.saturating_sub(max_bytes);
+    if start > 0 {
+        file.seek(SeekFrom::Start(start))
+            .map_err(|e| format!("seek: {}", e))?;
+    }
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).map_err(|e| format!("read: {}", e))?;
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    let trimmed = if start > 0 {
+        if let Some(nl) = text.find('\n') {
+            &text[nl + 1..]
+        } else {
+            &text
+        }
+    } else {
+        &text
+    };
+    let lines: Vec<&str> = trimmed.lines().collect();
+    let start_idx = lines.len().saturating_sub(max_lines);
+    Ok(lines[start_idx..].join("\n"))
+}
+
 pub fn cancel_job(job_id: &str) -> Result<(), String> {
     run_command("scancel", &[job_id])?;
     Ok(())

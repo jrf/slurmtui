@@ -6,11 +6,97 @@ use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::widgets::TableState;
 
-use crate::slurm::{self, HistoryEntry, Job, JobDetail, PartitionInfo, SubmitForm};
+use crate::slurm::{self, HistoryEntry, Job, JobDetail, LogKind, PartitionInfo, SubmitForm};
 
 const WALK_CAP: usize = 10_000;
 const MATCH_LIMIT: usize = 500;
 const DEFAULT_VIEWPORT: u16 = 10;
+const LOG_TAIL_LINES: usize = 500;
+const LOG_TAIL_BYTES: u64 = 256 * 1024;
+const LOG_FOLLOW_INTERVAL: Duration = Duration::from_secs(2);
+
+pub struct LogView {
+    pub job_id: String,
+    pub kind: LogKind,
+    pub path: String,
+    pub contents: String,
+    pub scroll: u16,
+    pub follow: bool,
+    pub last_read: Instant,
+    pub error: Option<String>,
+}
+
+impl LogView {
+    fn new(job_id: String, kind: LogKind) -> Self {
+        let mut v = Self {
+            job_id,
+            kind,
+            path: String::new(),
+            contents: String::new(),
+            scroll: 0,
+            follow: false,
+            last_read: Instant::now(),
+            error: None,
+        };
+        v.reload();
+        v
+    }
+
+    pub fn reload(&mut self) {
+        self.last_read = Instant::now();
+        let path = match slurm::fetch_log_path(&self.job_id, self.kind) {
+            Ok(p) => p,
+            Err(e) => {
+                self.error = Some(e);
+                self.path.clear();
+                self.contents.clear();
+                return;
+            }
+        };
+        self.path = path.clone();
+        let p = std::path::Path::new(&path);
+        match slurm::read_log_tail(p, LOG_TAIL_LINES, LOG_TAIL_BYTES) {
+            Ok(text) => {
+                self.contents = text;
+                self.error = None;
+            }
+            Err(e) => {
+                self.contents.clear();
+                self.error = Some(e);
+            }
+        }
+        if self.follow {
+            self.scroll_bottom();
+        }
+    }
+
+    pub fn line_count(&self) -> usize {
+        if self.contents.is_empty() {
+            0
+        } else {
+            self.contents.lines().count()
+        }
+    }
+
+    pub fn scroll_bottom(&mut self) {
+        let n = self.line_count();
+        self.scroll = (n as u16).saturating_sub(1);
+    }
+
+    pub fn toggle_follow(&mut self) {
+        self.follow = !self.follow;
+        if self.follow {
+            self.scroll_bottom();
+        }
+    }
+
+    pub fn toggle_kind(&mut self) {
+        self.kind = self.kind.flip();
+        self.scroll = 0;
+        self.follow = false;
+        self.reload();
+    }
+}
 
 #[derive(Clone, Copy)]
 enum NavAction {
@@ -374,6 +460,7 @@ pub enum Popup {
     SubmitConfirm,
     SubmitResult { success: bool, message: String },
     FilePicker(FilePicker),
+    LogView(LogView),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -761,11 +848,28 @@ impl App {
     }
 
     pub fn time_until_refresh(&self) -> Duration {
-        let elapsed = self.last_refresh.elapsed();
-        self.refresh_interval.saturating_sub(elapsed)
+        let main = self.refresh_interval.saturating_sub(self.last_refresh.elapsed());
+        if let Popup::LogView(ref v) = self.popup {
+            if v.follow {
+                let follow_left = LOG_FOLLOW_INTERVAL.saturating_sub(v.last_read.elapsed());
+                return main.min(follow_left);
+            }
+        }
+        main
     }
 
     pub fn tick(&mut self) {
+        let mut log_should_reload = false;
+        if let Popup::LogView(ref v) = self.popup {
+            if v.follow && v.last_read.elapsed() >= LOG_FOLLOW_INTERVAL {
+                log_should_reload = true;
+            }
+        }
+        if log_should_reload {
+            if let Popup::LogView(ref mut v) = self.popup {
+                v.reload();
+            }
+        }
         if self.last_refresh.elapsed() >= self.refresh_interval {
             self.refresh_active_tab();
             self.last_refresh = Instant::now();
@@ -1031,6 +1135,85 @@ impl App {
                 }
                 _ => {}
             },
+            Popup::LogView(_) => {
+                let line_count = if let Popup::LogView(ref v) = self.popup {
+                    v.line_count()
+                } else {
+                    0
+                };
+                let page = 10u16;
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        self.popup = Popup::None;
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            let max = (line_count as u16).saturating_sub(1);
+                            v.scroll = (v.scroll + 1).min(max);
+                            v.follow = false;
+                        }
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            v.scroll = v.scroll.saturating_sub(1);
+                            v.follow = false;
+                        }
+                    }
+                    KeyCode::PageDown => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            let max = (line_count as u16).saturating_sub(1);
+                            v.scroll = (v.scroll + page).min(max);
+                            v.follow = false;
+                        }
+                    }
+                    KeyCode::PageUp => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            v.scroll = v.scroll.saturating_sub(page);
+                            v.follow = false;
+                        }
+                    }
+                    KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            let max = (line_count as u16).saturating_sub(1);
+                            v.scroll = (v.scroll + page).min(max);
+                            v.follow = false;
+                        }
+                    }
+                    KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            v.scroll = v.scroll.saturating_sub(page);
+                            v.follow = false;
+                        }
+                    }
+                    KeyCode::Char('g') | KeyCode::Home => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            v.scroll = 0;
+                            v.follow = false;
+                        }
+                    }
+                    KeyCode::Char('G') | KeyCode::End => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            v.scroll_bottom();
+                        }
+                    }
+                    KeyCode::Char('r') => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            v.reload();
+                        }
+                    }
+                    KeyCode::Char('f') => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            v.toggle_follow();
+                        }
+                    }
+                    KeyCode::Char('t') => {
+                        if let Popup::LogView(ref mut v) = self.popup {
+                            v.toggle_kind();
+                        }
+                    }
+                    _ => {}
+                }
+            }
             Popup::FilePicker(_) => {
                 let query_active = matches!(&self.popup, Popup::FilePicker(p) if p.query_active);
                 if query_active {
@@ -1239,8 +1422,25 @@ impl App {
                     self.jobs_sort.1.arrow()
                 ));
             }
+            KeyCode::Char('o') | KeyCode::Char('O') => {
+                let kind = if matches!(key.code, KeyCode::Char('O')) {
+                    LogKind::StdErr
+                } else {
+                    LogKind::StdOut
+                };
+                if let Some(selected) = self.jobs_table_state.selected() {
+                    let filtered = self.filtered_jobs();
+                    if let Some(job) = filtered.get(selected) {
+                        self.open_log_view(job.job_id.clone(), kind);
+                    }
+                }
+            }
             _ => {}
         }
+    }
+
+    fn open_log_view(&mut self, job_id: String, kind: LogKind) {
+        self.popup = Popup::LogView(LogView::new(job_id, kind));
     }
 
     fn on_key_nodes(&mut self, key: KeyEvent) {
@@ -1444,6 +1644,19 @@ impl App {
                     self.history_sort.0.label(),
                     self.history_sort.1.arrow()
                 ));
+            }
+            KeyCode::Char('o') | KeyCode::Char('O') => {
+                let kind = if matches!(key.code, KeyCode::Char('O')) {
+                    LogKind::StdErr
+                } else {
+                    LogKind::StdOut
+                };
+                if let Some(selected) = self.history_table_state.selected() {
+                    let filtered = self.filtered_history();
+                    if let Some(entry) = filtered.get(selected) {
+                        self.open_log_view(entry.job_id.clone(), kind);
+                    }
+                }
             }
             _ => {}
         }
