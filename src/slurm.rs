@@ -1,3 +1,5 @@
+use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 pub struct Job {
@@ -61,11 +63,11 @@ impl SubmitForm {
             job_name: String::new(),
             script_path: String::new(),
             partition: String::new(),
-            cpus: "1".to_string(),
-            memory: "4G".to_string(),
-            time_limit: "1:00:00".to_string(),
-            gpu_count: "0".to_string(),
-            output_file: "slurm-%j.out".to_string(),
+            cpus: String::new(),
+            memory: String::new(),
+            time_limit: String::new(),
+            gpu_count: String::new(),
+            output_file: String::new(),
             extra_args: String::new(),
             active_field: 0,
             editing: false,
@@ -117,6 +119,38 @@ impl SubmitForm {
             7 => Some(&mut self.output_file),
             8 => Some(&mut self.extra_args),
             _ => None,
+        }
+    }
+
+    pub fn apply_directives(&mut self, d: &ParsedDirectives) {
+        if let Some(v) = &d.job_name {
+            self.job_name = v.clone();
+        }
+        if let Some(v) = &d.partition {
+            self.partition = v.clone();
+        }
+        if let Some(v) = &d.cpus {
+            self.cpus = v.clone();
+        }
+        if let Some(v) = &d.memory {
+            self.memory = v.clone();
+        }
+        if let Some(v) = &d.time_limit {
+            self.time_limit = v.clone();
+        }
+        if let Some(v) = &d.gpu_count {
+            self.gpu_count = v.clone();
+        }
+        if let Some(v) = &d.output_file {
+            self.output_file = v.clone();
+        }
+        if !d.extras.is_empty() {
+            let joined = d.extras.join(" ");
+            self.extra_args = if self.extra_args.is_empty() {
+                joined
+            } else {
+                format!("{} {}", self.extra_args, joined)
+            };
         }
     }
 
@@ -345,6 +379,169 @@ pub fn submit_job(form: &SubmitForm) -> Result<String, String> {
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let output = run_command("sbatch", &args_refs)?;
     Ok(output.trim().to_string())
+}
+
+#[derive(Default)]
+pub struct ParsedDirectives {
+    pub job_name: Option<String>,
+    pub partition: Option<String>,
+    pub cpus: Option<String>,
+    pub memory: Option<String>,
+    pub time_limit: Option<String>,
+    pub gpu_count: Option<String>,
+    pub output_file: Option<String>,
+    pub extras: Vec<String>,
+    pub count: usize,
+}
+
+pub fn parse_sbatch_directives(path: &Path) -> Result<ParsedDirectives, String> {
+    let contents = fs::read_to_string(path)
+        .map_err(|e| format!("read {}: {}", path.display(), e))?;
+    let mut out = ParsedDirectives::default();
+    for raw in contents.lines() {
+        let line = raw.trim_start();
+        if line.is_empty() {
+            continue;
+        }
+        if !line.starts_with('#') {
+            break;
+        }
+        let after_hash = line.trim_start_matches('#').trim_start();
+        if !after_hash.starts_with("SBATCH") {
+            continue;
+        }
+        let args = after_hash["SBATCH".len()..].trim();
+        if args.is_empty() {
+            continue;
+        }
+        parse_directive_args(args, &mut out);
+    }
+    Ok(out)
+}
+
+fn parse_directive_args(args: &str, out: &mut ParsedDirectives) {
+    let tokens: Vec<&str> = args.split_whitespace().collect();
+    let mut i = 0;
+    while i < tokens.len() {
+        let tok = tokens[i];
+        if let Some(rest) = tok.strip_prefix("--") {
+            if let Some((key, value)) = rest.split_once('=') {
+                apply_long(key, value, out);
+                i += 1;
+                continue;
+            }
+            if i + 1 < tokens.len() {
+                apply_long(rest, tokens[i + 1], out);
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+        if let Some(rest) = tok.strip_prefix('-') {
+            if rest.len() == 1 {
+                if i + 1 < tokens.len() {
+                    apply_short(rest, tokens[i + 1], out);
+                    i += 2;
+                    continue;
+                }
+                i += 1;
+                continue;
+            }
+            let (flag, value) = rest.split_at(1);
+            apply_short(flag, value, out);
+            i += 1;
+            continue;
+        }
+        out.extras.push(tok.to_string());
+        i += 1;
+    }
+}
+
+fn strip_quotes(v: &str) -> &str {
+    let t = v.trim();
+    if t.len() >= 2 {
+        let bytes = t.as_bytes();
+        let first = bytes[0];
+        let last = bytes[t.len() - 1];
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            return &t[1..t.len() - 1];
+        }
+    }
+    t
+}
+
+fn apply_long(key: &str, value: &str, out: &mut ParsedDirectives) {
+    let v = strip_quotes(value);
+    match key {
+        "job-name" => {
+            out.job_name = Some(v.to_string());
+            out.count += 1;
+        }
+        "partition" => {
+            out.partition = Some(v.to_string());
+            out.count += 1;
+        }
+        "cpus-per-task" => {
+            out.cpus = Some(v.to_string());
+            out.count += 1;
+        }
+        "mem" => {
+            out.memory = Some(v.to_string());
+            out.count += 1;
+        }
+        "time" => {
+            out.time_limit = Some(v.to_string());
+            out.count += 1;
+        }
+        "gres" => {
+            for piece in v.split(',') {
+                if let Some(rest) = piece.strip_prefix("gpu:") {
+                    let count_str = rest.rsplit(':').next().unwrap_or("");
+                    if !count_str.is_empty() && count_str.chars().all(|c| c.is_ascii_digit()) {
+                        out.gpu_count = Some(count_str.to_string());
+                        out.count += 1;
+                    }
+                }
+            }
+        }
+        "output" => {
+            out.output_file = Some(v.to_string());
+            out.count += 1;
+        }
+        _ => {
+            out.extras.push(format!("--{}={}", key, v));
+        }
+    }
+}
+
+fn apply_short(key: &str, value: &str, out: &mut ParsedDirectives) {
+    let v = strip_quotes(value);
+    match key {
+        "J" => {
+            out.job_name = Some(v.to_string());
+            out.count += 1;
+        }
+        "p" => {
+            out.partition = Some(v.to_string());
+            out.count += 1;
+        }
+        "c" => {
+            out.cpus = Some(v.to_string());
+            out.count += 1;
+        }
+        "t" => {
+            out.time_limit = Some(v.to_string());
+            out.count += 1;
+        }
+        "o" => {
+            out.output_file = Some(v.to_string());
+            out.count += 1;
+        }
+        _ => {
+            out.extras.push(format!("-{} {}", key, v));
+        }
+    }
 }
 
 pub fn fetch_partition_names() -> Result<Vec<String>, String> {

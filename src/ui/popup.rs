@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Row, Table, Wrap},
 };
 
+use crate::app::FilePicker;
 use crate::colors;
 use crate::slurm::JobDetail;
 
@@ -98,6 +99,73 @@ pub fn render_confirm(frame: &mut Frame, area: Rect, message: &str) {
     ];
 
     let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, inner);
+}
+
+pub fn render_file_picker(frame: &mut Frame, area: Rect, picker: &FilePicker) {
+    let popup_area = centered_rect(70, 70, area);
+    frame.render_widget(Clear, popup_area);
+
+    let mode = if picker.show_all { "all" } else { "scripts" };
+    let title = format!(
+        " Browse [{}]: {} (j/k:nav  Enter:open  h/Bksp:up  a:toggle  Esc:cancel) ",
+        mode,
+        picker.current_dir.display()
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(colors::BLUE))
+        .title(Span::styled(
+            title,
+            Style::default().fg(colors::BLUE).add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    if picker.entries.is_empty() {
+        let empty = Paragraph::new(Line::from(Span::styled(
+            "<no matching entries — press `a` to show all files>",
+            Style::default().fg(colors::DARK5),
+        )));
+        frame.render_widget(empty, inner);
+        return;
+    }
+
+    let height = inner.height as usize;
+    let total = picker.entries.len();
+    let start = if picker.selected >= height {
+        picker.selected + 1 - height
+    } else {
+        0
+    };
+    let end = (start + height).min(total);
+
+    let lines: Vec<Line> = picker.entries[start..end]
+        .iter()
+        .enumerate()
+        .map(|(i, ent)| {
+            let global_i = start + i;
+            let display = if ent.is_dir {
+                format!("{}/", ent.name)
+            } else {
+                ent.name.clone()
+            };
+            let style = if global_i == picker.selected {
+                Style::default()
+                    .fg(colors::FG)
+                    .bg(colors::BG_HIGHLIGHT)
+                    .add_modifier(Modifier::BOLD)
+            } else if ent.is_dir {
+                Style::default().fg(colors::BLUE)
+            } else {
+                Style::default().fg(colors::FG)
+            };
+            Line::from(Span::styled(display, style))
+        })
+        .collect();
+
+    let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, inner);
 }
 

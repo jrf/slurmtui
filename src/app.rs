@@ -1,9 +1,127 @@
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::TableState;
 
 use crate::slurm::{self, HistoryEntry, Job, JobDetail, PartitionInfo, SubmitForm};
+
+pub struct PickerEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
+pub struct FilePicker {
+    pub current_dir: PathBuf,
+    pub entries: Vec<PickerEntry>,
+    pub selected: usize,
+    pub show_all: bool,
+}
+
+impl FilePicker {
+    pub fn new(start: PathBuf) -> Self {
+        let mut p = Self {
+            current_dir: start,
+            entries: Vec::new(),
+            selected: 0,
+            show_all: false,
+        };
+        p.reload();
+        p
+    }
+
+    pub fn reload(&mut self) {
+        self.entries.clear();
+        self.selected = 0;
+        let read = match std::fs::read_dir(&self.current_dir) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+        for ent in read.flatten() {
+            let name = ent.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            let is_dir = ent.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            if !is_dir && !self.show_all && !looks_like_script(&name) {
+                continue;
+            }
+            self.entries.push(PickerEntry { name, is_dir });
+        }
+        self.entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        });
+    }
+
+    pub fn enter_selected(&mut self) -> Option<PathBuf> {
+        let ent = self.entries.get(self.selected)?;
+        let target = self.current_dir.join(&ent.name);
+        if ent.is_dir {
+            self.current_dir = std::fs::canonicalize(&target).unwrap_or(target);
+            self.reload();
+            None
+        } else {
+            Some(target)
+        }
+    }
+
+    pub fn go_up(&mut self) {
+        if let Some(parent) = self.current_dir.parent() {
+            let parent = parent.to_path_buf();
+            self.current_dir = std::fs::canonicalize(&parent).unwrap_or(parent);
+            self.reload();
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        if !self.entries.is_empty() {
+            self.selected = (self.selected + 1) % self.entries.len();
+        }
+    }
+
+    pub fn move_up(&mut self) {
+        if !self.entries.is_empty() {
+            self.selected = if self.selected == 0 {
+                self.entries.len() - 1
+            } else {
+                self.selected - 1
+            };
+        }
+    }
+
+    pub fn toggle_show_all(&mut self) {
+        self.show_all = !self.show_all;
+        self.reload();
+    }
+}
+
+fn looks_like_script(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.ends_with(".sh")
+        || lower.ends_with(".sbatch")
+        || lower.ends_with(".slurm")
+        || lower.ends_with(".bash")
+}
+
+fn picker_start_dir(script_path: &str) -> PathBuf {
+    if !script_path.is_empty() {
+        let p = Path::new(script_path);
+        if let Some(parent) = p.parent() {
+            if parent.as_os_str().is_empty() {
+                // path was just a bare filename — use cwd
+            } else if parent.is_dir() {
+                return std::fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
+            }
+        }
+    }
+    std::env::current_dir().unwrap_or_else(|_| {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/"))
+    })
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -47,6 +165,7 @@ pub enum Popup {
     ConfirmCancel { job_id: String },
     SubmitConfirm,
     SubmitResult { success: bool, message: String },
+    FilePicker(FilePicker),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -402,7 +521,81 @@ impl App {
                 }
                 _ => {}
             },
+            Popup::FilePicker(_) => match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    self.popup = Popup::None;
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if let Popup::FilePicker(ref mut p) = self.popup {
+                        p.move_down();
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if let Popup::FilePicker(ref mut p) = self.popup {
+                        p.move_up();
+                    }
+                }
+                KeyCode::Char('g') => {
+                    if let Popup::FilePicker(ref mut p) = self.popup {
+                        p.selected = 0;
+                    }
+                }
+                KeyCode::Char('G') => {
+                    if let Popup::FilePicker(ref mut p) = self.popup {
+                        if !p.entries.is_empty() {
+                            p.selected = p.entries.len() - 1;
+                        }
+                    }
+                }
+                KeyCode::Char('h') | KeyCode::Backspace => {
+                    if let Popup::FilePicker(ref mut p) = self.popup {
+                        p.go_up();
+                    }
+                }
+                KeyCode::Char('a') => {
+                    if let Popup::FilePicker(ref mut p) = self.popup {
+                        p.toggle_show_all();
+                    }
+                }
+                KeyCode::Enter => {
+                    let picked = if let Popup::FilePicker(ref mut p) = self.popup {
+                        p.enter_selected()
+                    } else {
+                        None
+                    };
+                    if let Some(path) = picked {
+                        self.popup = Popup::None;
+                        self.apply_picked_script(path);
+                    }
+                }
+                _ => {}
+            },
             Popup::None => {}
+        }
+    }
+
+    fn apply_picked_script(&mut self, path: PathBuf) {
+        let resolved = std::fs::canonicalize(&path).unwrap_or(path);
+        self.submit_form.script_path = resolved.to_string_lossy().to_string();
+        self.parse_and_apply_directives(&resolved);
+    }
+
+    fn parse_and_apply_directives(&mut self, path: &Path) {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "script".to_string());
+        match slurm::parse_sbatch_directives(path) {
+            Ok(d) => {
+                let count = d.count;
+                self.submit_form.apply_directives(&d);
+                if count > 0 {
+                    self.set_status(format!("Loaded {} #SBATCH directive(s) from {}", count, name));
+                } else {
+                    self.set_status(format!("No #SBATCH directives in {}", name));
+                }
+            }
+            Err(e) => self.set_status(format!("Parse error: {}", e)),
         }
     }
 
@@ -522,6 +715,10 @@ impl App {
                     self.popup = Popup::SubmitConfirm;
                 }
             }
+            KeyCode::Char('b') if self.submit_form.active_field == 0 => {
+                let start = picker_start_dir(&self.submit_form.script_path);
+                self.popup = Popup::FilePicker(FilePicker::new(start));
+            }
             _ => {}
         }
     }
@@ -530,6 +727,12 @@ impl App {
         match key.code {
             KeyCode::Esc | KeyCode::Enter => {
                 self.submit_form.editing = false;
+                if self.submit_form.active_field == 0 && !self.submit_form.script_path.is_empty() {
+                    let path = PathBuf::from(&self.submit_form.script_path);
+                    if path.is_file() {
+                        self.parse_and_apply_directives(&path);
+                    }
+                }
             }
             KeyCode::Char(c) => {
                 if let Some(field) = self.submit_form.field_value_mut(self.submit_form.active_field)

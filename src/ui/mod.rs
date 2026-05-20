@@ -47,6 +47,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Popup::SubmitResult { success, message } => {
             popup::render_result(frame, frame.area(), *success, message);
         }
+        Popup::FilePicker(picker) => {
+            popup::render_file_picker(frame, frame.area(), picker);
+        }
     }
 }
 
@@ -115,6 +118,14 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
                 vec![
                     key_span("Type"), desc_span(":Input  "),
                     key_span("Enter/Esc"), desc_span(":Done"),
+                ]
+            } else if app.submit_form.active_field == 0 {
+                vec![
+                    key_span("j/k"), desc_span(":Field  "),
+                    key_span("Enter"), desc_span(":Edit  "),
+                    key_span("b"), desc_span(":Browse  "),
+                    key_span("C-s"), desc_span(":Submit  "),
+                    key_span("q"), desc_span(":Quit"),
                 ]
             } else {
                 vec![
