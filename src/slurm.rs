@@ -79,6 +79,22 @@ impl SubmitForm {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.job_name.clear();
+        self.script_path.clear();
+        self.partition.clear();
+        self.nodes.clear();
+        self.cpus.clear();
+        self.memory.clear();
+        self.time_limit.clear();
+        self.gpu_count.clear();
+        self.output_file.clear();
+        self.error_file.clear();
+        self.extra_args.clear();
+        self.active_field = 0;
+        self.editing = false;
+    }
+
     pub const FIELD_COUNT: usize = 11;
 
     pub fn field_label(&self, index: usize) -> &str {

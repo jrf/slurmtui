@@ -937,6 +937,10 @@ impl App {
                 picker.start_query();
                 self.popup = Popup::FilePicker(picker);
             }
+            KeyCode::Char('c') => {
+                self.submit_form.clear();
+                self.set_status("Submit form cleared".to_string());
+            }
             _ => {}
         }
     }

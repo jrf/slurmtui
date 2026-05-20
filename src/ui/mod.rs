@@ -124,6 +124,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
                     key_span("j/k"), desc_span(":Field  "),
                     key_span("Enter"), desc_span(":Edit  "),
                     key_span("b"), desc_span(":Browse  "),
+                    key_span("c"), desc_span(":Clear  "),
                     key_span("C-s"), desc_span(":Submit  "),
                     key_span("q"), desc_span(":Quit"),
                 ]
@@ -131,6 +132,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
                 vec![
                     key_span("j/k"), desc_span(":Field  "),
                     key_span("Enter"), desc_span(":Edit  "),
+                    key_span("c"), desc_span(":Clear  "),
                     key_span("C-s"), desc_span(":Submit  "),
                     key_span("q"), desc_span(":Quit"),
                 ]
