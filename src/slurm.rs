@@ -46,11 +46,13 @@ pub struct SubmitForm {
     pub job_name: String,
     pub script_path: String,
     pub partition: String,
+    pub nodes: String,
     pub cpus: String,
     pub memory: String,
     pub time_limit: String,
     pub gpu_count: String,
     pub output_file: String,
+    pub error_file: String,
     pub extra_args: String,
     pub active_field: usize,
     pub editing: bool,
@@ -63,11 +65,13 @@ impl SubmitForm {
             job_name: String::new(),
             script_path: String::new(),
             partition: String::new(),
+            nodes: String::new(),
             cpus: String::new(),
             memory: String::new(),
             time_limit: String::new(),
             gpu_count: String::new(),
             output_file: String::new(),
+            error_file: String::new(),
             extra_args: String::new(),
             active_field: 0,
             editing: false,
@@ -75,19 +79,21 @@ impl SubmitForm {
         }
     }
 
-    pub const FIELD_COUNT: usize = 9;
+    pub const FIELD_COUNT: usize = 11;
 
     pub fn field_label(&self, index: usize) -> &str {
         match index {
             0 => "Script Path",
             1 => "Job Name",
             2 => "Partition",
-            3 => "CPUs",
-            4 => "Memory",
-            5 => "Time Limit",
-            6 => "GPU Count",
-            7 => "Output File",
-            8 => "Extra Args",
+            3 => "Nodes",
+            4 => "CPUs",
+            5 => "Memory",
+            6 => "Time Limit",
+            7 => "GPU Count",
+            8 => "Output File",
+            9 => "Error File",
+            10 => "Extra Args",
             _ => "",
         }
     }
@@ -97,12 +103,14 @@ impl SubmitForm {
             0 => &self.script_path,
             1 => &self.job_name,
             2 => &self.partition,
-            3 => &self.cpus,
-            4 => &self.memory,
-            5 => &self.time_limit,
-            6 => &self.gpu_count,
-            7 => &self.output_file,
-            8 => &self.extra_args,
+            3 => &self.nodes,
+            4 => &self.cpus,
+            5 => &self.memory,
+            6 => &self.time_limit,
+            7 => &self.gpu_count,
+            8 => &self.output_file,
+            9 => &self.error_file,
+            10 => &self.extra_args,
             _ => "",
         }
     }
@@ -112,12 +120,14 @@ impl SubmitForm {
             0 => Some(&mut self.script_path),
             1 => Some(&mut self.job_name),
             2 => Some(&mut self.partition),
-            3 => Some(&mut self.cpus),
-            4 => Some(&mut self.memory),
-            5 => Some(&mut self.time_limit),
-            6 => Some(&mut self.gpu_count),
-            7 => Some(&mut self.output_file),
-            8 => Some(&mut self.extra_args),
+            3 => Some(&mut self.nodes),
+            4 => Some(&mut self.cpus),
+            5 => Some(&mut self.memory),
+            6 => Some(&mut self.time_limit),
+            7 => Some(&mut self.gpu_count),
+            8 => Some(&mut self.output_file),
+            9 => Some(&mut self.error_file),
+            10 => Some(&mut self.extra_args),
             _ => None,
         }
     }
@@ -128,6 +138,9 @@ impl SubmitForm {
         }
         if let Some(v) = &d.partition {
             self.partition = v.clone();
+        }
+        if let Some(v) = &d.nodes {
+            self.nodes = v.clone();
         }
         if let Some(v) = &d.cpus {
             self.cpus = v.clone();
@@ -143,6 +156,9 @@ impl SubmitForm {
         }
         if let Some(v) = &d.output_file {
             self.output_file = v.clone();
+        }
+        if let Some(v) = &d.error_file {
+            self.error_file = v.clone();
         }
         if !d.extras.is_empty() {
             let joined = d.extras.join(" ");
@@ -161,6 +177,9 @@ impl SubmitForm {
         }
         if !self.partition.is_empty() {
             parts.push(format!("--partition={}", self.partition));
+        }
+        if !self.nodes.is_empty() {
+            parts.push(format!("--nodes={}", self.nodes));
         }
         if !self.cpus.is_empty() {
             parts.push(format!("--cpus-per-task={}", self.cpus));
@@ -181,6 +200,9 @@ impl SubmitForm {
         }
         if !self.output_file.is_empty() {
             parts.push(format!("--output={}", self.output_file));
+        }
+        if !self.error_file.is_empty() {
+            parts.push(format!("--error={}", self.error_file));
         }
         if !self.extra_args.is_empty() {
             parts.push(self.extra_args.clone());
@@ -346,6 +368,9 @@ pub fn submit_job(form: &SubmitForm) -> Result<String, String> {
     if !form.partition.is_empty() {
         args.push(format!("--partition={}", form.partition));
     }
+    if !form.nodes.is_empty() {
+        args.push(format!("--nodes={}", form.nodes));
+    }
     if !form.cpus.is_empty() {
         args.push(format!("--cpus-per-task={}", form.cpus));
     }
@@ -366,6 +391,9 @@ pub fn submit_job(form: &SubmitForm) -> Result<String, String> {
     if !form.output_file.is_empty() {
         args.push(format!("--output={}", form.output_file));
     }
+    if !form.error_file.is_empty() {
+        args.push(format!("--error={}", form.error_file));
+    }
     if !form.extra_args.is_empty() {
         for arg in form.extra_args.split_whitespace() {
             args.push(arg.to_string());
@@ -385,11 +413,13 @@ pub fn submit_job(form: &SubmitForm) -> Result<String, String> {
 pub struct ParsedDirectives {
     pub job_name: Option<String>,
     pub partition: Option<String>,
+    pub nodes: Option<String>,
     pub cpus: Option<String>,
     pub memory: Option<String>,
     pub time_limit: Option<String>,
     pub gpu_count: Option<String>,
     pub output_file: Option<String>,
+    pub error_file: Option<String>,
     pub extras: Vec<String>,
     pub count: usize,
 }
@@ -482,6 +512,10 @@ fn apply_long(key: &str, value: &str, out: &mut ParsedDirectives) {
             out.partition = Some(v.to_string());
             out.count += 1;
         }
+        "nodes" => {
+            out.nodes = Some(v.to_string());
+            out.count += 1;
+        }
         "cpus-per-task" => {
             out.cpus = Some(v.to_string());
             out.count += 1;
@@ -509,6 +543,10 @@ fn apply_long(key: &str, value: &str, out: &mut ParsedDirectives) {
             out.output_file = Some(v.to_string());
             out.count += 1;
         }
+        "error" => {
+            out.error_file = Some(v.to_string());
+            out.count += 1;
+        }
         _ => {
             out.extras.push(format!("--{}={}", key, v));
         }
@@ -526,6 +564,10 @@ fn apply_short(key: &str, value: &str, out: &mut ParsedDirectives) {
             out.partition = Some(v.to_string());
             out.count += 1;
         }
+        "N" => {
+            out.nodes = Some(v.to_string());
+            out.count += 1;
+        }
         "c" => {
             out.cpus = Some(v.to_string());
             out.count += 1;
@@ -536,6 +578,10 @@ fn apply_short(key: &str, value: &str, out: &mut ParsedDirectives) {
         }
         "o" => {
             out.output_file = Some(v.to_string());
+            out.count += 1;
+        }
+        "e" => {
+            out.error_file = Some(v.to_string());
             out.count += 1;
         }
         _ => {
