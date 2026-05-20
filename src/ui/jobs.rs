@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 
-use crate::app::{App, JobFilter};
+use crate::app::{cmp_job_col, App, JobFilter, JobSort, SortDir};
 use crate::colors;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
@@ -43,7 +43,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let search = app.job_search.to_lowercase();
-    let filtered: Vec<_> = app.jobs.iter().filter(|j| {
+    let mut filtered: Vec<_> = app.jobs.iter().filter(|j| {
         if search.is_empty() { return true; }
         j.job_id.to_lowercase().contains(&search)
             || j.name.to_lowercase().contains(&search)
@@ -52,23 +52,36 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             || j.user.to_lowercase().contains(&search)
             || j.reason_or_nodelist.to_lowercase().contains(&search)
     }).collect();
+    let (jcol, jdir) = app.jobs_sort;
+    filtered.sort_by(|a, b| {
+        let ord = cmp_job_col(a, b, jcol);
+        if jdir == SortDir::Asc { ord } else { ord.reverse() }
+    });
     let filter_label = match app.job_filter {
         JobFilter::MyJobs => "My Jobs",
         JobFilter::AllJobs => "All Jobs",
     };
     let title = format!(" {} ({}) ", filter_label, filtered.len());
 
+    let (sort_col, sort_dir) = app.jobs_sort;
+    let hdr = |label: &str, col: JobSort| -> String {
+        if col == sort_col {
+            format!("{} {}", label, sort_dir.arrow())
+        } else {
+            label.to_string()
+        }
+    };
     let header = Row::new(vec![
-        Cell::from("Job ID"),
-        Cell::from("Name"),
-        Cell::from("Partition"),
-        Cell::from("State"),
-        Cell::from("CPUs"),
-        Cell::from("Memory"),
-        Cell::from("Elapsed"),
-        Cell::from("TimeLimit"),
+        Cell::from(hdr("Job ID", JobSort::JobId)),
+        Cell::from(hdr("Name", JobSort::Name)),
+        Cell::from(hdr("Partition", JobSort::Partition)),
+        Cell::from(hdr("State", JobSort::State)),
+        Cell::from(hdr("CPUs", JobSort::Cpus)),
+        Cell::from(hdr("Memory", JobSort::Memory)),
+        Cell::from(hdr("Elapsed", JobSort::Elapsed)),
+        Cell::from(hdr("TimeLimit", JobSort::TimeLimit)),
         Cell::from("Node/Reason"),
-        Cell::from("User"),
+        Cell::from(hdr("User", JobSort::User)),
     ])
     .style(
         Style::default()
@@ -122,6 +135,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     };
 
     let table_area = chunks[1];
+    app.jobs_viewport = table_area.height.saturating_sub(3).max(1);
     if rows.is_empty() {
         let msg = Paragraph::new(Line::from(Span::styled(empty_msg, Style::default().fg(colors::COMMENT))).centered())
             .block(

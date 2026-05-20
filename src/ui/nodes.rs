@@ -6,20 +6,35 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 
-use crate::app::App;
+use crate::app::{cmp_node_col, App, NodeSort, SortDir};
 use crate::colors;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
-    let title = format!(" Partitions ({}) ", app.partitions.len());
+    app.nodes_viewport = area.height.saturating_sub(3).max(1);
+    let mut partitions: Vec<_> = app.partitions.iter().collect();
+    let (ncol, ndir) = app.nodes_sort;
+    partitions.sort_by(|a, b| {
+        let ord = cmp_node_col(a, b, ncol);
+        if ndir == SortDir::Asc { ord } else { ord.reverse() }
+    });
+    let title = format!(" Partitions ({}) ", partitions.len());
 
+    let (sort_col, sort_dir) = app.nodes_sort;
+    let hdr = |label: &str, col: NodeSort| -> String {
+        if col == sort_col {
+            format!("{} {}", label, sort_dir.arrow())
+        } else {
+            label.to_string()
+        }
+    };
     let header = Row::new(vec![
-        Cell::from("Partition"),
-        Cell::from("Avail"),
-        Cell::from("TimeLimit"),
-        Cell::from("Nodes"),
-        Cell::from("State"),
-        Cell::from("CPUs"),
-        Cell::from("Mem(GB)"),
+        Cell::from(hdr("Partition", NodeSort::Partition)),
+        Cell::from(hdr("Avail", NodeSort::Avail)),
+        Cell::from(hdr("TimeLimit", NodeSort::TimeLimit)),
+        Cell::from(hdr("Nodes", NodeSort::Nodes)),
+        Cell::from(hdr("State", NodeSort::State)),
+        Cell::from(hdr("CPUs", NodeSort::Cpus)),
+        Cell::from(hdr("Mem(GB)", NodeSort::Memory)),
         Cell::from("GRES"),
         Cell::from("NodeList"),
     ])
@@ -29,8 +44,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             .add_modifier(Modifier::BOLD),
     );
 
-    let rows: Vec<Row> = app
-        .partitions
+    let rows: Vec<Row> = partitions
         .iter()
         .map(|p| {
             let state_color = match p.state.as_str() {

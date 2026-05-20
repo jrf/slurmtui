@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 
-use crate::app::App;
+use crate::app::{cmp_history_col, App, HistorySort, SortDir};
 use crate::colors;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
@@ -43,27 +43,40 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let search = app.history_search.to_lowercase();
-    let filtered: Vec<_> = app.history.iter().filter(|h| {
+    let mut filtered: Vec<_> = app.history.iter().filter(|h| {
         if search.is_empty() { return true; }
         h.job_id.to_lowercase().contains(&search)
             || h.job_name.to_lowercase().contains(&search)
             || h.partition.to_lowercase().contains(&search)
             || h.state.to_lowercase().contains(&search)
     }).collect();
+    let (hcol, hdir) = app.history_sort;
+    filtered.sort_by(|a, b| {
+        let ord = cmp_history_col(a, b, hcol);
+        if hdir == SortDir::Asc { ord } else { ord.reverse() }
+    });
     let title = format!(
         " History - {} ({}) ",
         app.history_range.label(),
         filtered.len()
     );
 
+    let (sort_col, sort_dir) = app.history_sort;
+    let hdr = |label: &str, col: HistorySort| -> String {
+        if col == sort_col {
+            format!("{} {}", label, sort_dir.arrow())
+        } else {
+            label.to_string()
+        }
+    };
     let header = Row::new(vec![
-        Cell::from("Job ID"),
-        Cell::from("Name"),
-        Cell::from("Partition"),
-        Cell::from("State"),
-        Cell::from("Elapsed"),
-        Cell::from("CPUTime"),
-        Cell::from("MaxRSS"),
+        Cell::from(hdr("Job ID", HistorySort::JobId)),
+        Cell::from(hdr("Name", HistorySort::Name)),
+        Cell::from(hdr("Partition", HistorySort::Partition)),
+        Cell::from(hdr("State", HistorySort::State)),
+        Cell::from(hdr("Elapsed", HistorySort::Elapsed)),
+        Cell::from(hdr("CPUTime", HistorySort::CpuTime)),
+        Cell::from(hdr("MaxRSS", HistorySort::MaxRss)),
         Cell::from("Exit"),
     ])
     .style(
@@ -110,6 +123,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .collect();
 
     let table_area = chunks[1];
+    app.history_viewport = table_area.height.saturating_sub(3).max(1);
     if rows.is_empty() {
         let msg = Paragraph::new(Line::from(Span::styled("No history entries", Style::default().fg(colors::COMMENT))).centered())
             .block(

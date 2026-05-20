@@ -10,6 +10,46 @@ use crate::slurm::{self, HistoryEntry, Job, JobDetail, PartitionInfo, SubmitForm
 
 const WALK_CAP: usize = 10_000;
 const MATCH_LIMIT: usize = 500;
+const DEFAULT_VIEWPORT: u16 = 10;
+
+#[derive(Clone, Copy)]
+enum NavAction {
+    Down,
+    Up,
+    PageDown,
+    PageUp,
+    Top,
+    Bottom,
+}
+
+fn nav_table(state: &mut TableState, count: usize, action: NavAction, page: usize) {
+    if count == 0 {
+        state.select(None);
+        return;
+    }
+    let cur = state.selected().unwrap_or(0);
+    let next = match action {
+        NavAction::Down => {
+            if cur + 1 >= count {
+                0
+            } else {
+                cur + 1
+            }
+        }
+        NavAction::Up => {
+            if cur == 0 {
+                count - 1
+            } else {
+                cur - 1
+            }
+        }
+        NavAction::PageDown => (cur + page.max(1)).min(count - 1),
+        NavAction::PageUp => cur.saturating_sub(page.max(1)),
+        NavAction::Top => 0,
+        NavAction::Bottom => count - 1,
+    };
+    state.select(Some(next));
+}
 
 pub struct PickerEntry {
     pub name: String,
@@ -337,6 +377,265 @@ pub enum Popup {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SortDir {
+    Asc,
+    Desc,
+}
+
+impl SortDir {
+    pub fn arrow(self) -> &'static str {
+        match self {
+            SortDir::Asc => "↑",
+            SortDir::Desc => "↓",
+        }
+    }
+
+    pub fn flip(self) -> Self {
+        match self {
+            SortDir::Asc => SortDir::Desc,
+            SortDir::Desc => SortDir::Asc,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum JobSort {
+    JobId,
+    Name,
+    Partition,
+    State,
+    Cpus,
+    Memory,
+    Elapsed,
+    TimeLimit,
+    User,
+}
+
+impl JobSort {
+    const ALL: [JobSort; 9] = [
+        JobSort::JobId,
+        JobSort::Name,
+        JobSort::Partition,
+        JobSort::State,
+        JobSort::Cpus,
+        JobSort::Memory,
+        JobSort::Elapsed,
+        JobSort::TimeLimit,
+        JobSort::User,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            JobSort::JobId => "Job ID",
+            JobSort::Name => "Name",
+            JobSort::Partition => "Partition",
+            JobSort::State => "State",
+            JobSort::Cpus => "CPUs",
+            JobSort::Memory => "Memory",
+            JobSort::Elapsed => "Elapsed",
+            JobSort::TimeLimit => "TimeLimit",
+            JobSort::User => "User",
+        }
+    }
+
+    fn cycle(self) -> Self {
+        let i = Self::ALL.iter().position(|c| *c == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum NodeSort {
+    Partition,
+    Avail,
+    TimeLimit,
+    Nodes,
+    State,
+    Cpus,
+    Memory,
+}
+
+impl NodeSort {
+    const ALL: [NodeSort; 7] = [
+        NodeSort::Partition,
+        NodeSort::Avail,
+        NodeSort::TimeLimit,
+        NodeSort::Nodes,
+        NodeSort::State,
+        NodeSort::Cpus,
+        NodeSort::Memory,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            NodeSort::Partition => "Partition",
+            NodeSort::Avail => "Avail",
+            NodeSort::TimeLimit => "TimeLimit",
+            NodeSort::Nodes => "Nodes",
+            NodeSort::State => "State",
+            NodeSort::Cpus => "CPUs",
+            NodeSort::Memory => "Mem(GB)",
+        }
+    }
+
+    fn cycle(self) -> Self {
+        let i = Self::ALL.iter().position(|c| *c == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HistorySort {
+    JobId,
+    Name,
+    Partition,
+    State,
+    Elapsed,
+    CpuTime,
+    MaxRss,
+}
+
+impl HistorySort {
+    const ALL: [HistorySort; 7] = [
+        HistorySort::JobId,
+        HistorySort::Name,
+        HistorySort::Partition,
+        HistorySort::State,
+        HistorySort::Elapsed,
+        HistorySort::CpuTime,
+        HistorySort::MaxRss,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            HistorySort::JobId => "Job ID",
+            HistorySort::Name => "Name",
+            HistorySort::Partition => "Partition",
+            HistorySort::State => "State",
+            HistorySort::Elapsed => "Elapsed",
+            HistorySort::CpuTime => "CPUTime",
+            HistorySort::MaxRss => "MaxRSS",
+        }
+    }
+
+    fn cycle(self) -> Self {
+        let i = Self::ALL.iter().position(|c| *c == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+}
+
+fn cmp_job_id(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse = |s: &str| -> Option<u64> {
+        let primary = s.split(['_', '.']).next().unwrap_or(s);
+        primary.parse::<u64>().ok()
+    };
+    match (parse(a), parse(b)) {
+        (Some(x), Some(y)) => x.cmp(&y),
+        _ => a.cmp(b),
+    }
+}
+
+fn parse_slurm_time(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() || s.eq_ignore_ascii_case("UNLIMITED") || s.eq_ignore_ascii_case("Unknown") {
+        return None;
+    }
+    let (days, rest) = if let Some(dash) = s.find('-') {
+        (s[..dash].parse::<u64>().ok()?, &s[dash + 1..])
+    } else {
+        (0u64, s)
+    };
+    let parts: Vec<&str> = rest.split(':').collect();
+    let (h, m, sec) = match parts.len() {
+        3 => (
+            parts[0].parse::<u64>().ok()?,
+            parts[1].parse::<u64>().ok()?,
+            parts[2].parse::<u64>().ok()?,
+        ),
+        2 => (0u64, parts[0].parse::<u64>().ok()?, parts[1].parse::<u64>().ok()?),
+        1 => (0u64, 0u64, parts[0].parse::<u64>().ok()?),
+        _ => return None,
+    };
+    Some(days * 86400 + h * 3600 + m * 60 + sec)
+}
+
+fn cmp_time(a: &str, b: &str) -> std::cmp::Ordering {
+    match (parse_slurm_time(a), parse_slurm_time(b)) {
+        (Some(x), Some(y)) => x.cmp(&y),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.cmp(b),
+    }
+}
+
+fn parse_memory(s: &str) -> Option<u64> {
+    let s = s.trim().trim_end_matches('+');
+    if s.is_empty() {
+        return None;
+    }
+    let (num, suffix) = s.split_at(s.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(s.len()));
+    let n: f64 = num.parse().ok()?;
+    let mult: u64 = match suffix.trim().to_ascii_uppercase().as_str() {
+        "" | "M" | "MB" => 1,
+        "K" | "KB" => 0,
+        "G" | "GB" => 1024,
+        "T" | "TB" => 1024 * 1024,
+        _ => return None,
+    };
+    if suffix.eq_ignore_ascii_case("K") || suffix.eq_ignore_ascii_case("KB") {
+        return Some((n / 1024.0) as u64);
+    }
+    Some((n * mult as f64) as u64)
+}
+
+fn cmp_memory(a: &str, b: &str) -> std::cmp::Ordering {
+    match (parse_memory(a), parse_memory(b)) {
+        (Some(x), Some(y)) => x.cmp(&y),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.cmp(b),
+    }
+}
+
+pub fn cmp_job_col(a: &Job, b: &Job, col: JobSort) -> std::cmp::Ordering {
+    match col {
+        JobSort::JobId => cmp_job_id(&a.job_id, &b.job_id),
+        JobSort::Name => a.name.cmp(&b.name),
+        JobSort::Partition => a.partition.cmp(&b.partition),
+        JobSort::State => a.state.cmp(&b.state),
+        JobSort::Cpus => a.cpus.cmp(&b.cpus),
+        JobSort::Memory => cmp_memory(&a.memory, &b.memory),
+        JobSort::Elapsed => cmp_time(&a.elapsed, &b.elapsed),
+        JobSort::TimeLimit => cmp_time(&a.time_limit, &b.time_limit),
+        JobSort::User => a.user.cmp(&b.user),
+    }
+}
+
+pub fn cmp_history_col(a: &HistoryEntry, b: &HistoryEntry, col: HistorySort) -> std::cmp::Ordering {
+    match col {
+        HistorySort::JobId => cmp_job_id(&a.job_id, &b.job_id),
+        HistorySort::Name => a.job_name.cmp(&b.job_name),
+        HistorySort::Partition => a.partition.cmp(&b.partition),
+        HistorySort::State => a.state.cmp(&b.state),
+        HistorySort::Elapsed => cmp_time(&a.elapsed, &b.elapsed),
+        HistorySort::CpuTime => cmp_time(&a.cpu_time, &b.cpu_time),
+        HistorySort::MaxRss => cmp_memory(&a.max_rss, &b.max_rss),
+    }
+}
+
+pub fn cmp_node_col(a: &PartitionInfo, b: &PartitionInfo, col: NodeSort) -> std::cmp::Ordering {
+    match col {
+        NodeSort::Partition => a.partition.cmp(&b.partition),
+        NodeSort::Avail => a.avail.cmp(&b.avail),
+        NodeSort::TimeLimit => cmp_time(&a.time_limit, &b.time_limit),
+        NodeSort::Nodes => a.nodes.cmp(&b.nodes),
+        NodeSort::State => a.state.cmp(&b.state),
+        NodeSort::Cpus => a.cpus_per_node.cmp(&b.cpus_per_node),
+        NodeSort::Memory => a.memory_mb.cmp(&b.memory_mb),
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HistoryRange {
     Today,
     Week,
@@ -406,6 +705,14 @@ pub struct App {
     pub username: String,
 
     pub status_message: Option<(String, Instant)>,
+
+    pub jobs_viewport: u16,
+    pub nodes_viewport: u16,
+    pub history_viewport: u16,
+
+    pub jobs_sort: (JobSort, SortDir),
+    pub nodes_sort: (NodeSort, SortDir),
+    pub history_sort: (HistorySort, SortDir),
 }
 
 impl App {
@@ -440,6 +747,14 @@ impl App {
             username,
 
             status_message: None,
+
+            jobs_viewport: DEFAULT_VIEWPORT,
+            nodes_viewport: DEFAULT_VIEWPORT,
+            history_viewport: DEFAULT_VIEWPORT,
+
+            jobs_sort: (JobSort::JobId, SortDir::Asc),
+            nodes_sort: (NodeSort::Partition, SortDir::Asc),
+            history_sort: (HistorySort::JobId, SortDir::Desc),
         };
         app.refresh_all();
         app
@@ -534,7 +849,8 @@ impl App {
 
     pub fn filtered_jobs(&self) -> Vec<&Job> {
         let search = self.job_search.to_lowercase();
-        self.jobs
+        let mut out: Vec<&Job> = self
+            .jobs
             .iter()
             .filter(|j| {
                 if search.is_empty() {
@@ -547,12 +863,19 @@ impl App {
                     || j.user.to_lowercase().contains(&search)
                     || j.reason_or_nodelist.to_lowercase().contains(&search)
             })
-            .collect()
+            .collect();
+        let (col, dir) = self.jobs_sort;
+        out.sort_by(|a, b| {
+            let ord = cmp_job_col(a, b, col);
+            if dir == SortDir::Asc { ord } else { ord.reverse() }
+        });
+        out
     }
 
     pub fn filtered_history(&self) -> Vec<&HistoryEntry> {
         let search = self.history_search.to_lowercase();
-        self.history
+        let mut out: Vec<&HistoryEntry> = self
+            .history
             .iter()
             .filter(|h| {
                 if search.is_empty() {
@@ -563,8 +886,15 @@ impl App {
                     || h.partition.to_lowercase().contains(&search)
                     || h.state.to_lowercase().contains(&search)
             })
-            .collect()
+            .collect();
+        let (col, dir) = self.history_sort;
+        out.sort_by(|a, b| {
+            let ord = cmp_history_col(a, b, col);
+            if dir == SortDir::Asc { ord } else { ord.reverse() }
+        });
+        out
     }
+
 
     pub fn on_key(&mut self, key: KeyEvent) {
         // Popup handling takes priority
@@ -590,6 +920,10 @@ impl App {
         }
 
         // Global keys
+        if matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.should_quit = true;
+            return;
+        }
         match key.code {
             KeyCode::Char('q') => {
                 self.should_quit = true;
@@ -825,22 +1159,31 @@ impl App {
 
     fn on_key_jobs(&mut self, key: KeyEvent) {
         let job_count = self.filtered_jobs().len();
+        let page = self.jobs_viewport as usize;
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                if job_count > 0 {
-                    let i = self.jobs_table_state.selected().map_or(0, |i| {
-                        if i >= job_count - 1 { 0 } else { i + 1 }
-                    });
-                    self.jobs_table_state.select(Some(i));
-                }
+                nav_table(&mut self.jobs_table_state, job_count, NavAction::Down, page);
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if job_count > 0 {
-                    let i = self.jobs_table_state.selected().map_or(0, |i| {
-                        if i == 0 { job_count - 1 } else { i - 1 }
-                    });
-                    self.jobs_table_state.select(Some(i));
-                }
+                nav_table(&mut self.jobs_table_state, job_count, NavAction::Up, page);
+            }
+            KeyCode::PageDown => {
+                nav_table(&mut self.jobs_table_state, job_count, NavAction::PageDown, page);
+            }
+            KeyCode::PageUp => {
+                nav_table(&mut self.jobs_table_state, job_count, NavAction::PageUp, page);
+            }
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                nav_table(&mut self.jobs_table_state, job_count, NavAction::PageDown, page);
+            }
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                nav_table(&mut self.jobs_table_state, job_count, NavAction::PageUp, page);
+            }
+            KeyCode::Char('g') | KeyCode::Home => {
+                nav_table(&mut self.jobs_table_state, job_count, NavAction::Top, page);
+            }
+            KeyCode::Char('G') | KeyCode::End => {
+                nav_table(&mut self.jobs_table_state, job_count, NavAction::Bottom, page);
             }
             KeyCode::Enter => {
                 if let Some(selected) = self.jobs_table_state.selected() {
@@ -870,7 +1213,7 @@ impl App {
             KeyCode::Char('/') => {
                 self.job_search_active = true;
             }
-            KeyCode::Char('f') => {
+            KeyCode::Char('f') if key.modifiers.is_empty() => {
                 self.job_filter = match self.job_filter {
                     JobFilter::MyJobs => JobFilter::AllJobs,
                     JobFilter::AllJobs => JobFilter::MyJobs,
@@ -878,28 +1221,73 @@ impl App {
                 self.jobs_table_state.select(None);
                 self.refresh_jobs();
             }
+            KeyCode::Char('s') if key.modifiers.is_empty() => {
+                self.jobs_sort.0 = self.jobs_sort.0.cycle();
+                self.jobs_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {}",
+                    self.jobs_sort.0.label(),
+                    self.jobs_sort.1.arrow()
+                ));
+            }
+            KeyCode::Char('S') => {
+                self.jobs_sort.1 = self.jobs_sort.1.flip();
+                self.jobs_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {}",
+                    self.jobs_sort.0.label(),
+                    self.jobs_sort.1.arrow()
+                ));
+            }
             _ => {}
         }
     }
 
     fn on_key_nodes(&mut self, key: KeyEvent) {
         let count = self.partitions.len();
+        let page = self.nodes_viewport as usize;
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                if count > 0 {
-                    let i = self.nodes_table_state.selected().map_or(0, |i| {
-                        if i >= count - 1 { 0 } else { i + 1 }
-                    });
-                    self.nodes_table_state.select(Some(i));
-                }
+                nav_table(&mut self.nodes_table_state, count, NavAction::Down, page);
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if count > 0 {
-                    let i = self.nodes_table_state.selected().map_or(0, |i| {
-                        if i == 0 { count - 1 } else { i - 1 }
-                    });
-                    self.nodes_table_state.select(Some(i));
-                }
+                nav_table(&mut self.nodes_table_state, count, NavAction::Up, page);
+            }
+            KeyCode::PageDown => {
+                nav_table(&mut self.nodes_table_state, count, NavAction::PageDown, page);
+            }
+            KeyCode::PageUp => {
+                nav_table(&mut self.nodes_table_state, count, NavAction::PageUp, page);
+            }
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                nav_table(&mut self.nodes_table_state, count, NavAction::PageDown, page);
+            }
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                nav_table(&mut self.nodes_table_state, count, NavAction::PageUp, page);
+            }
+            KeyCode::Char('g') | KeyCode::Home => {
+                nav_table(&mut self.nodes_table_state, count, NavAction::Top, page);
+            }
+            KeyCode::Char('G') | KeyCode::End => {
+                nav_table(&mut self.nodes_table_state, count, NavAction::Bottom, page);
+            }
+            KeyCode::Char('s') if key.modifiers.is_empty() => {
+                self.nodes_sort.0 = self.nodes_sort.0.cycle();
+                self.nodes_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {}",
+                    self.nodes_sort.0.label(),
+                    self.nodes_sort.1.arrow()
+                ));
+            }
+            KeyCode::Char('S') => {
+                self.nodes_sort.1 = self.nodes_sort.1.flip();
+                self.nodes_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {}",
+                    self.nodes_sort.0.label(),
+                    self.nodes_sort.1.arrow()
+                ));
             }
             _ => {}
         }
@@ -916,6 +1304,12 @@ impl App {
                     + SubmitForm::FIELD_COUNT
                     - 1)
                     % SubmitForm::FIELD_COUNT;
+            }
+            KeyCode::Char('g') | KeyCode::Home => {
+                self.submit_form.active_field = 0;
+            }
+            KeyCode::Char('G') | KeyCode::End => {
+                self.submit_form.active_field = SubmitForm::FIELD_COUNT - 1;
             }
             KeyCode::Enter => {
                 if self.submit_form.active_field == 2 {
@@ -939,13 +1333,15 @@ impl App {
                     self.popup = Popup::SubmitConfirm;
                 }
             }
-            KeyCode::Char('b') if self.submit_form.active_field == 0 => {
+            KeyCode::Char('b')
+                if self.submit_form.active_field == 0 && key.modifiers.is_empty() =>
+            {
                 let start = picker_start_dir(&self.submit_form.script_path);
                 let mut picker = FilePicker::new(start);
                 picker.start_query();
                 self.popup = Popup::FilePicker(picker);
             }
-            KeyCode::Char('c') => {
+            KeyCode::Char('c') if key.modifiers.is_empty() => {
                 self.submit_form.clear();
                 self.set_status("Submit form cleared".to_string());
             }
@@ -982,22 +1378,31 @@ impl App {
 
     fn on_key_history(&mut self, key: KeyEvent) {
         let count = self.filtered_history().len();
+        let page = self.history_viewport as usize;
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                if count > 0 {
-                    let i = self.history_table_state.selected().map_or(0, |i| {
-                        if i >= count - 1 { 0 } else { i + 1 }
-                    });
-                    self.history_table_state.select(Some(i));
-                }
+                nav_table(&mut self.history_table_state, count, NavAction::Down, page);
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if count > 0 {
-                    let i = self.history_table_state.selected().map_or(0, |i| {
-                        if i == 0 { count - 1 } else { i - 1 }
-                    });
-                    self.history_table_state.select(Some(i));
-                }
+                nav_table(&mut self.history_table_state, count, NavAction::Up, page);
+            }
+            KeyCode::PageDown => {
+                nav_table(&mut self.history_table_state, count, NavAction::PageDown, page);
+            }
+            KeyCode::PageUp => {
+                nav_table(&mut self.history_table_state, count, NavAction::PageUp, page);
+            }
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                nav_table(&mut self.history_table_state, count, NavAction::PageDown, page);
+            }
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                nav_table(&mut self.history_table_state, count, NavAction::PageUp, page);
+            }
+            KeyCode::Char('g') | KeyCode::Home => {
+                nav_table(&mut self.history_table_state, count, NavAction::Top, page);
+            }
+            KeyCode::Char('G') | KeyCode::End => {
+                nav_table(&mut self.history_table_state, count, NavAction::Bottom, page);
             }
             KeyCode::Enter => {
                 if let Some(selected) = self.history_table_state.selected() {
@@ -1017,10 +1422,28 @@ impl App {
             KeyCode::Char('/') => {
                 self.history_search_active = true;
             }
-            KeyCode::Char('f') => {
+            KeyCode::Char('f') if key.modifiers.is_empty() => {
                 self.history_range = self.history_range.next();
                 self.history_table_state.select(None);
                 self.refresh_history();
+            }
+            KeyCode::Char('s') if key.modifiers.is_empty() => {
+                self.history_sort.0 = self.history_sort.0.cycle();
+                self.history_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {}",
+                    self.history_sort.0.label(),
+                    self.history_sort.1.arrow()
+                ));
+            }
+            KeyCode::Char('S') => {
+                self.history_sort.1 = self.history_sort.1.flip();
+                self.history_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {}",
+                    self.history_sort.0.label(),
+                    self.history_sort.1.arrow()
+                ));
             }
             _ => {}
         }

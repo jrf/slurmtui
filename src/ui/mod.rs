@@ -103,6 +103,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
                     key_span("d"), desc_span(":Cancel  "),
                     key_span("/"), desc_span(":Search  "),
                     key_span("f"), desc_span(":Filter  "),
+                    key_span("s/S"), desc_span(":Sort  "),
                     key_span("r"), desc_span(":Refresh  "),
                     key_span("q"), desc_span(":Quit"),
                 ]
@@ -110,6 +111,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         }
         Tab::Nodes => vec![
             key_span("j/k"), desc_span(":Nav  "),
+            key_span("s/S"), desc_span(":Sort  "),
             key_span("r"), desc_span(":Refresh  "),
             key_span("q"), desc_span(":Quit"),
         ],
@@ -150,6 +152,7 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
                     key_span("Enter"), desc_span(":Detail  "),
                     key_span("/"), desc_span(":Search  "),
                     key_span("f"), desc_span(":Range  "),
+                    key_span("s/S"), desc_span(":Sort  "),
                     key_span("r"), desc_span(":Refresh  "),
                     key_span("q"), desc_span(":Quit"),
                 ]
