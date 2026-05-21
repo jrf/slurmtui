@@ -155,8 +155,8 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             Constraint::Length(10),
             Constraint::Length(10),
             Constraint::Length(12),
-            Constraint::Length(28),
-            Constraint::Length(10),
+            Constraint::Length(12),
+            Constraint::Length(12),
         ];
 
         let table = Table::new(rows, widths)
