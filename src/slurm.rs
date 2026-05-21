@@ -187,12 +187,13 @@ impl SubmitForm {
     }
 
     pub fn to_command_string(&self) -> String {
+        let partition = self.partition.trim_end_matches('*');
         let mut parts = vec!["sbatch".to_string()];
         if !self.job_name.is_empty() {
             parts.push(format!("--job-name={}", self.job_name));
         }
-        if !self.partition.is_empty() {
-            parts.push(format!("--partition={}", self.partition));
+        if !partition.is_empty() {
+            parts.push(format!("--partition={}", partition));
         }
         if !self.nodes.is_empty() {
             parts.push(format!("--nodes={}", self.nodes));
@@ -461,12 +462,13 @@ pub fn cancel_job(job_id: &str) -> Result<(), String> {
 }
 
 pub fn submit_job(form: &SubmitForm) -> Result<String, String> {
+    let partition = form.partition.trim_end_matches('*');
     let mut args: Vec<String> = Vec::new();
     if !form.job_name.is_empty() {
         args.push(format!("--job-name={}", form.job_name));
     }
-    if !form.partition.is_empty() {
-        args.push(format!("--partition={}", form.partition));
+    if !partition.is_empty() {
+        args.push(format!("--partition={}", partition));
     }
     if !form.nodes.is_empty() {
         args.push(format!("--nodes={}", form.nodes));
@@ -694,7 +696,7 @@ pub fn fetch_partition_names() -> Result<Vec<String>, String> {
     let output = run_command("sinfo", &["--format=%P", "--noheader"])?;
     let mut names: Vec<String> = output
         .lines()
-        .map(|l| l.trim().to_string())
+        .map(|l| l.trim().trim_end_matches('*').to_string())
         .filter(|l| !l.is_empty())
         .collect();
     names.sort();
