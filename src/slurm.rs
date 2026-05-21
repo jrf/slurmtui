@@ -188,6 +188,7 @@ impl SubmitForm {
 
     pub fn to_command_string(&self) -> String {
         let partition = self.partition.trim_end_matches('*');
+        let gpu_type = gpu_type_from_partition(partition);
         let mut parts = vec!["sbatch".to_string()];
         if !self.job_name.is_empty() {
             parts.push(format!("--job-name={}", self.job_name));
@@ -208,12 +209,10 @@ impl SubmitForm {
             parts.push(format!("--time={}", self.time_limit));
         }
         if !self.gpu_count.is_empty() && self.gpu_count != "0" {
-            let gpu_type = if self.partition.contains("h100") {
-                "h100"
-            } else {
-                "a100"
-            };
-            parts.push(format!("--gres=gpu:{}:{}", gpu_type, self.gpu_count));
+            parts.push(match gpu_type {
+                Some(t) => format!("--gres=gpu:{}:{}", t, self.gpu_count),
+                None => format!("--gres=gpu:{}", self.gpu_count),
+            });
         }
         if !self.output_file.is_empty() {
             parts.push(format!("--output={}", self.output_file));
@@ -483,12 +482,11 @@ pub fn submit_job(form: &SubmitForm) -> Result<String, String> {
         args.push(format!("--time={}", form.time_limit));
     }
     if !form.gpu_count.is_empty() && form.gpu_count != "0" {
-        let gpu_type = if form.partition.contains("h100") {
-            "h100"
-        } else {
-            "a100"
-        };
-        args.push(format!("--gres=gpu:{}:{}", gpu_type, form.gpu_count));
+        let gpu_type = gpu_type_from_partition(partition);
+        args.push(match gpu_type {
+            Some(t) => format!("--gres=gpu:{}:{}", t, form.gpu_count),
+            None => format!("--gres=gpu:{}", form.gpu_count),
+        });
     }
     if !form.output_file.is_empty() {
         args.push(format!("--output={}", form.output_file));
@@ -690,6 +688,20 @@ fn apply_short(key: &str, value: &str, out: &mut ParsedDirectives) {
             out.extras.push(format!("-{} {}", key, v));
         }
     }
+}
+
+pub fn gpu_type_from_partition(partition: &str) -> Option<&'static str> {
+    let lower = partition.to_lowercase();
+    const TYPES: &[&str] = &[
+        "h200", "h100", "b200", "b100", "a100", "a40", "l40s", "l40", "v100", "t4", "p100", "k80",
+        "mi300", "mi250",
+    ];
+    for ty in TYPES {
+        if lower.contains(ty) {
+            return Some(ty);
+        }
+    }
+    None
 }
 
 pub fn fetch_partition_names() -> Result<Vec<String>, String> {
