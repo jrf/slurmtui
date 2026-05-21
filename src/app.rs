@@ -493,19 +493,21 @@ pub enum JobSort {
     State,
     Cpus,
     Memory,
+    Gpus,
     Elapsed,
     TimeLimit,
     User,
 }
 
 impl JobSort {
-    const ALL: [JobSort; 9] = [
+    const ALL: [JobSort; 10] = [
         JobSort::JobId,
         JobSort::Name,
         JobSort::Partition,
         JobSort::State,
         JobSort::Cpus,
         JobSort::Memory,
+        JobSort::Gpus,
         JobSort::Elapsed,
         JobSort::TimeLimit,
         JobSort::User,
@@ -519,6 +521,7 @@ impl JobSort {
             JobSort::State => "State",
             JobSort::Cpus => "CPUs",
             JobSort::Memory => "Memory",
+            JobSort::Gpus => "GPUs",
             JobSort::Elapsed => "Elapsed",
             JobSort::TimeLimit => "TimeLimit",
             JobSort::User => "User",
@@ -684,6 +687,10 @@ fn cmp_memory(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
+pub fn job_total_gpus(j: &Job) -> u32 {
+    j.gpus_per_node.saturating_mul(j.num_nodes.max(1))
+}
+
 pub fn cmp_job_col(a: &Job, b: &Job, col: JobSort) -> std::cmp::Ordering {
     match col {
         JobSort::JobId => cmp_job_id(&a.job_id, &b.job_id),
@@ -692,6 +699,7 @@ pub fn cmp_job_col(a: &Job, b: &Job, col: JobSort) -> std::cmp::Ordering {
         JobSort::State => a.state.cmp(&b.state),
         JobSort::Cpus => a.cpus.cmp(&b.cpus),
         JobSort::Memory => cmp_memory(&a.memory, &b.memory),
+        JobSort::Gpus => job_total_gpus(a).cmp(&job_total_gpus(b)),
         JobSort::Elapsed => cmp_time(&a.elapsed, &b.elapsed),
         JobSort::TimeLimit => cmp_time(&a.time_limit, &b.time_limit),
         JobSort::User => a.user.cmp(&b.user),

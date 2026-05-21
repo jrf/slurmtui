@@ -13,6 +13,8 @@ pub struct Job {
     pub time_limit: String,
     pub reason_or_nodelist: String,
     pub user: String,
+    pub num_nodes: u32,
+    pub gpus_per_node: u32,
 }
 
 pub struct PartitionInfo {
@@ -241,7 +243,7 @@ fn run_command(cmd: &str, args: &[&str]) -> Result<String, String> {
 }
 
 pub fn fetch_jobs(filter_user: Option<&str>) -> Result<Vec<Job>, String> {
-    let format_str = "--format=%i|%j|%P|%T|%C|%m|%M|%l|%R|%u".to_string();
+    let format_str = "--format=%i|%j|%P|%T|%C|%m|%M|%l|%R|%u|%D|%b".to_string();
     let mut args = vec![format_str.as_str(), "--noheader"];
     let user_flag;
     if let Some(user) = filter_user {
@@ -262,6 +264,11 @@ fn parse_job_line(line: &str) -> Option<Job> {
     if parts.len() < 10 {
         return None;
     }
+    let num_nodes = parts.get(10).map(|s| s.trim().parse().unwrap_or(0)).unwrap_or(0);
+    let gpus_per_node = parts
+        .get(11)
+        .map(|s| parse_gpus_per_node(s.trim()))
+        .unwrap_or(0);
     Some(Job {
         job_id: parts[0].trim().to_string(),
         name: parts[1].trim().to_string(),
@@ -273,7 +280,39 @@ fn parse_job_line(line: &str) -> Option<Job> {
         time_limit: parts[7].trim().to_string(),
         reason_or_nodelist: parts[8].trim().to_string(),
         user: parts[9].trim().to_string(),
+        num_nodes,
+        gpus_per_node,
     })
+}
+
+/// Parse the trailing integer GPU count from a squeue %b (tres_per_node) field.
+///
+/// Examples:
+///   "gres:gpu:h200:2" -> 2
+///   "gres:gpu:2"      -> 2
+///   "gres/gpu:1"      -> 1
+///   "N/A" / ""        -> 0
+/// Multiple gres entries are comma-separated; we sum the GPU ones.
+fn parse_gpus_per_node(field: &str) -> u32 {
+    if field.is_empty() || field == "N/A" || field == "(null)" {
+        return 0;
+    }
+    let mut total: u32 = 0;
+    for entry in field.split(',') {
+        let entry = entry.trim();
+        let lower = entry.to_ascii_lowercase();
+        if !(lower.starts_with("gres:gpu") || lower.starts_with("gres/gpu") || lower.starts_with("gpu:")) {
+            continue;
+        }
+        if let Some(tail) = entry.rsplit(':').next() {
+            // Trim Slurm's optional "(IDX:...)" suffix if present.
+            let tail = tail.split('(').next().unwrap_or(tail);
+            if let Ok(n) = tail.parse::<u32>() {
+                total = total.saturating_add(n);
+            }
+        }
+    }
+    total
 }
 
 pub fn fetch_partitions() -> Result<Vec<PartitionInfo>, String> {

@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 
-use crate::app::{cmp_job_col, App, JobFilter, JobSort, SortDir};
+use crate::app::{cmp_job_col, job_total_gpus, App, JobFilter, JobSort, SortDir};
 use crate::colors;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
@@ -78,6 +78,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Cell::from(hdr("State", JobSort::State)),
         Cell::from(hdr("CPUs", JobSort::Cpus)),
         Cell::from(hdr("Memory", JobSort::Memory)),
+        Cell::from(hdr("GPUs", JobSort::Gpus)),
         Cell::from(hdr("Elapsed", JobSort::Elapsed)),
         Cell::from(hdr("TimeLimit", JobSort::TimeLimit)),
         Cell::from("Node/Reason"),
@@ -113,6 +114,20 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 _ => &job.state,
             };
 
+            let total_gpus = job_total_gpus(job);
+            let gpu_text = if total_gpus == 0 {
+                "-".to_string()
+            } else if job.num_nodes > 1 {
+                format!("{} ({}/node)", total_gpus, job.gpus_per_node)
+            } else {
+                total_gpus.to_string()
+            };
+            let gpu_style = if total_gpus == 0 {
+                Style::default().fg(colors::DARK5)
+            } else {
+                Style::default().fg(colors::MAGENTA)
+            };
+
             Row::new(vec![
                 Cell::from(Span::styled(job.job_id.as_str(), Style::default().fg(colors::FG))),
                 Cell::from(Span::styled(job.name.as_str(), Style::default().fg(colors::FG))),
@@ -120,6 +135,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 Cell::from(Span::styled(state_indicator, Style::default().fg(state_color))),
                 Cell::from(Span::styled(job.cpus.to_string(), Style::default().fg(colors::MAGENTA))),
                 Cell::from(Span::styled(job.memory.as_str(), Style::default().fg(colors::MAGENTA))),
+                Cell::from(Span::styled(gpu_text, gpu_style)),
                 Cell::from(Span::styled(job.elapsed.as_str(), Style::default().fg(colors::CYAN))),
                 Cell::from(Span::styled(job.time_limit.as_str(), Style::default().fg(colors::DARK5))),
                 Cell::from(Span::styled(job.reason_or_nodelist.as_str(), Style::default().fg(colors::FG_DARK))),
@@ -153,6 +169,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             Constraint::Length(8),
             Constraint::Length(5),
             Constraint::Length(10),
+            Constraint::Length(12),
             Constraint::Length(14),
             Constraint::Length(12),
             Constraint::Length(12),

@@ -27,5 +27,6 @@
 - [x] Job detail popup via scontrol #feature
 - [x] Cancel job with confirmation #feature
 - [x] Auto-refresh every 30 seconds #feature
+- [x] GPU usage column in Jobs view (total + per-node for multi-node) #feature
 
 ## Scrapped
