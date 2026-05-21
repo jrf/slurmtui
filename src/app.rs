@@ -34,7 +34,7 @@ impl LogView {
             path: String::new(),
             contents: String::new(),
             scroll: 0,
-            follow: false,
+            follow: true,
             last_read: Instant::now(),
             error: None,
         };
@@ -93,7 +93,7 @@ impl LogView {
     pub fn toggle_kind(&mut self) {
         self.kind = self.kind.flip();
         self.scroll = 0;
-        self.follow = false;
+        self.follow = true;
         self.reload();
     }
 }
