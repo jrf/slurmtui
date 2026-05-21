@@ -691,6 +691,9 @@ fn apply_short(key: &str, value: &str, out: &mut ParsedDirectives) {
 }
 
 pub fn gpu_type_from_partition(partition: &str) -> Option<&'static str> {
+    if partition.contains(',') {
+        return None;
+    }
     let lower = partition.to_lowercase();
     const TYPES: &[&str] = &[
         "h200", "h100", "b200", "b100", "a100", "a40", "l40s", "l40", "v100", "t4", "p100", "k80",
