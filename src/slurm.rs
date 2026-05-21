@@ -446,9 +446,55 @@ pub fn read_log_tail(path: &Path, max_lines: usize, max_bytes: u64) -> Result<St
     } else {
         &text
     };
-    let lines: Vec<&str> = trimmed.lines().collect();
-    let start_idx = lines.len().saturating_sub(max_lines);
-    Ok(lines[start_idx..].join("\n"))
+    let cleaned: Vec<String> = trimmed.lines().map(clean_log_line).collect();
+    let start_idx = cleaned.len().saturating_sub(max_lines);
+    Ok(cleaned[start_idx..].join("\n"))
+}
+
+fn clean_log_line(line: &str) -> String {
+    let after_cr = line.rsplit('\r').next().unwrap_or("");
+    strip_ansi(after_cr)
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                // CSI: consume until a final byte (0x40-0x7E)
+                while let Some(&ch) = chars.peek() {
+                    chars.next();
+                    if ('@'..='~').contains(&ch) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                // OSC: consume until BEL or ST (ESC \)
+                while let Some(ch) = chars.next() {
+                    if ch == '\x07' {
+                        break;
+                    }
+                    if ch == '\x1b' {
+                        if let Some(&'\\') = chars.peek() {
+                            chars.next();
+                        }
+                        break;
+                    }
+                }
+            }
+            Some(_) => {
+                // Other 2-byte escapes (e.g. ESC =, ESC >). Already consumed.
+            }
+            None => {}
+        }
+    }
+    out
 }
 
 pub fn cancel_job(job_id: &str) -> Result<(), String> {
