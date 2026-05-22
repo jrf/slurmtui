@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    Frame,
 };
 
 use crate::app::{cmp_job_col, job_total_gpus, App, JobFilter, JobSort, SortDir};
@@ -24,14 +24,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         } else {
             Style::default().fg(colors::COMMENT)
         };
-        let search = Paragraph::new(search_text)
-            .style(cursor_style)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(colors::FG_GUTTER))
-                    .title(Span::styled(" Search ", Style::default().fg(colors::BLUE))),
-            );
+        let search = Paragraph::new(search_text).style(cursor_style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(colors::FG_GUTTER))
+                .title(Span::styled(" Search ", Style::default().fg(colors::BLUE))),
+        );
         frame.render_widget(search, chunks[0]);
 
         if app.job_search_active {
@@ -43,19 +41,29 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let search = app.job_search.to_lowercase();
-    let mut filtered: Vec<_> = app.jobs.iter().filter(|j| {
-        if search.is_empty() { return true; }
-        j.job_id.to_lowercase().contains(&search)
-            || j.name.to_lowercase().contains(&search)
-            || j.partition.to_lowercase().contains(&search)
-            || j.state.to_lowercase().contains(&search)
-            || j.user.to_lowercase().contains(&search)
-            || j.reason_or_nodelist.to_lowercase().contains(&search)
-    }).collect();
+    let mut filtered: Vec<_> = app
+        .jobs
+        .iter()
+        .filter(|j| {
+            if search.is_empty() {
+                return true;
+            }
+            j.job_id.to_lowercase().contains(&search)
+                || j.name.to_lowercase().contains(&search)
+                || j.partition.to_lowercase().contains(&search)
+                || j.state.to_lowercase().contains(&search)
+                || j.user.to_lowercase().contains(&search)
+                || j.reason_or_nodelist.to_lowercase().contains(&search)
+        })
+        .collect();
     let (jcol, jdir) = app.jobs_sort;
     filtered.sort_by(|a, b| {
         let ord = cmp_job_col(a, b, jcol);
-        if jdir == SortDir::Asc { ord } else { ord.reverse() }
+        if jdir == SortDir::Asc {
+            ord
+        } else {
+            ord.reverse()
+        }
     });
     let filter_label = match app.job_filter {
         JobFilter::MyJobs => "My Jobs",
@@ -76,9 +84,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Cell::from(hdr("Name", JobSort::Name)),
         Cell::from(hdr("Partition", JobSort::Partition)),
         Cell::from(hdr("State", JobSort::State)),
+        Cell::from(hdr("GPUs", JobSort::Gpus)),
         Cell::from(hdr("CPUs", JobSort::Cpus)),
         Cell::from(hdr("Memory", JobSort::Memory)),
-        Cell::from(hdr("GPUs", JobSort::Gpus)),
         Cell::from(hdr("Elapsed", JobSort::Elapsed)),
         Cell::from(hdr("TimeLimit", JobSort::TimeLimit)),
         Cell::from("Node/Reason"),
@@ -129,17 +137,47 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             };
 
             Row::new(vec![
-                Cell::from(Span::styled(job.job_id.as_str(), Style::default().fg(colors::FG))),
-                Cell::from(Span::styled(job.name.as_str(), Style::default().fg(colors::FG))),
-                Cell::from(Span::styled(job.partition.as_str(), Style::default().fg(colors::FG_DARK))),
-                Cell::from(Span::styled(state_indicator, Style::default().fg(state_color))),
-                Cell::from(Span::styled(job.cpus.to_string(), Style::default().fg(colors::MAGENTA))),
-                Cell::from(Span::styled(job.memory.as_str(), Style::default().fg(colors::MAGENTA))),
+                Cell::from(Span::styled(
+                    job.job_id.as_str(),
+                    Style::default().fg(colors::FG),
+                )),
+                Cell::from(Span::styled(
+                    job.name.as_str(),
+                    Style::default().fg(colors::FG),
+                )),
+                Cell::from(Span::styled(
+                    job.partition.as_str(),
+                    Style::default().fg(colors::FG_DARK),
+                )),
+                Cell::from(Span::styled(
+                    state_indicator,
+                    Style::default().fg(state_color),
+                )),
                 Cell::from(Span::styled(gpu_text, gpu_style)),
-                Cell::from(Span::styled(job.elapsed.as_str(), Style::default().fg(colors::CYAN))),
-                Cell::from(Span::styled(job.time_limit.as_str(), Style::default().fg(colors::DARK5))),
-                Cell::from(Span::styled(job.reason_or_nodelist.as_str(), Style::default().fg(colors::FG_DARK))),
-                Cell::from(Span::styled(job.user.as_str(), Style::default().fg(colors::FG_DARK))),
+                Cell::from(Span::styled(
+                    job.cpus.to_string(),
+                    Style::default().fg(colors::MAGENTA),
+                )),
+                Cell::from(Span::styled(
+                    job.memory.as_str(),
+                    Style::default().fg(colors::MAGENTA),
+                )),
+                Cell::from(Span::styled(
+                    job.elapsed.as_str(),
+                    Style::default().fg(colors::CYAN),
+                )),
+                Cell::from(Span::styled(
+                    job.time_limit.as_str(),
+                    Style::default().fg(colors::DARK5),
+                )),
+                Cell::from(Span::styled(
+                    job.reason_or_nodelist.as_str(),
+                    Style::default().fg(colors::FG_DARK),
+                )),
+                Cell::from(Span::styled(
+                    job.user.as_str(),
+                    Style::default().fg(colors::FG_DARK),
+                )),
             ])
         })
         .collect();
@@ -153,13 +191,19 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let table_area = chunks[1];
     app.jobs_viewport = table_area.height.saturating_sub(3).max(1);
     if rows.is_empty() {
-        let msg = Paragraph::new(Line::from(Span::styled(empty_msg, Style::default().fg(colors::COMMENT))).centered())
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(colors::FG_GUTTER))
-                    .title(Span::styled(title, Style::default().fg(colors::BLUE))),
-            );
+        let msg = Paragraph::new(
+            Line::from(Span::styled(
+                empty_msg,
+                Style::default().fg(colors::COMMENT),
+            ))
+            .centered(),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(colors::FG_GUTTER))
+                .title(Span::styled(title, Style::default().fg(colors::BLUE))),
+        );
         frame.render_widget(msg, table_area);
     } else {
         let widths = [
@@ -167,9 +211,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             Constraint::Length(20),
             Constraint::Length(12),
             Constraint::Length(8),
+            Constraint::Length(12),
             Constraint::Length(5),
             Constraint::Length(10),
-            Constraint::Length(12),
             Constraint::Length(14),
             Constraint::Length(12),
             Constraint::Length(12),

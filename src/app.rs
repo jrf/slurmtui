@@ -255,7 +255,11 @@ impl FilePicker {
     pub fn move_up(&mut self) {
         let n = self.visible_len();
         if n > 0 {
-            self.selected = if self.selected == 0 { n - 1 } else { self.selected - 1 };
+            self.selected = if self.selected == 0 {
+                n - 1
+            } else {
+                self.selected - 1
+            };
         }
     }
 
@@ -505,9 +509,9 @@ impl JobSort {
         JobSort::Name,
         JobSort::Partition,
         JobSort::State,
+        JobSort::Gpus,
         JobSort::Cpus,
         JobSort::Memory,
-        JobSort::Gpus,
         JobSort::Elapsed,
         JobSort::TimeLimit,
         JobSort::User,
@@ -642,7 +646,11 @@ fn parse_slurm_time(s: &str) -> Option<u64> {
             parts[1].parse::<u64>().ok()?,
             parts[2].parse::<u64>().ok()?,
         ),
-        2 => (0u64, parts[0].parse::<u64>().ok()?, parts[1].parse::<u64>().ok()?),
+        2 => (
+            0u64,
+            parts[0].parse::<u64>().ok()?,
+            parts[1].parse::<u64>().ok()?,
+        ),
         1 => (0u64, 0u64, parts[0].parse::<u64>().ok()?),
         _ => return None,
     };
@@ -663,7 +671,10 @@ fn parse_memory(s: &str) -> Option<u64> {
     if s.is_empty() {
         return None;
     }
-    let (num, suffix) = s.split_at(s.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(s.len()));
+    let (num, suffix) = s.split_at(
+        s.find(|c: char| !c.is_ascii_digit() && c != '.')
+            .unwrap_or(s.len()),
+    );
     let n: f64 = num.parse().ok()?;
     let mult: u64 = match suffix.trim().to_ascii_uppercase().as_str() {
         "" | "M" | "MB" => 1,
@@ -856,7 +867,9 @@ impl App {
     }
 
     pub fn time_until_refresh(&self) -> Duration {
-        let main = self.refresh_interval.saturating_sub(self.last_refresh.elapsed());
+        let main = self
+            .refresh_interval
+            .saturating_sub(self.last_refresh.elapsed());
         if let Popup::LogView(ref v) = self.popup {
             if v.follow {
                 let follow_left = LOG_FOLLOW_INTERVAL.saturating_sub(v.last_read.elapsed());
@@ -979,7 +992,11 @@ impl App {
         let (col, dir) = self.jobs_sort;
         out.sort_by(|a, b| {
             let ord = cmp_job_col(a, b, col);
-            if dir == SortDir::Asc { ord } else { ord.reverse() }
+            if dir == SortDir::Asc {
+                ord
+            } else {
+                ord.reverse()
+            }
         });
         out
     }
@@ -1002,11 +1019,14 @@ impl App {
         let (col, dir) = self.history_sort;
         out.sort_by(|a, b| {
             let ord = cmp_history_col(a, b, col);
-            if dir == SortDir::Asc { ord } else { ord.reverse() }
+            if dir == SortDir::Asc {
+                ord
+            } else {
+                ord.reverse()
+            }
         });
         out
     }
-
 
     pub fn on_key(&mut self, key: KeyEvent) {
         // Popup handling takes priority
@@ -1105,23 +1125,21 @@ impl App {
                 _ => {}
             },
             Popup::SubmitConfirm => match key.code {
-                KeyCode::Char('y') => {
-                    match slurm::submit_job(&self.submit_form) {
-                        Ok(msg) => {
-                            self.popup = Popup::SubmitResult {
-                                success: true,
-                                message: msg,
-                            };
-                            self.refresh_jobs();
-                        }
-                        Err(e) => {
-                            self.popup = Popup::SubmitResult {
-                                success: false,
-                                message: e,
-                            };
-                        }
+                KeyCode::Char('y') => match slurm::submit_job(&self.submit_form) {
+                    Ok(msg) => {
+                        self.popup = Popup::SubmitResult {
+                            success: true,
+                            message: msg,
+                        };
+                        self.refresh_jobs();
                     }
-                }
+                    Err(e) => {
+                        self.popup = Popup::SubmitResult {
+                            success: false,
+                            message: e,
+                        };
+                    }
+                },
                 KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => {
                     self.popup = Popup::None;
                 }
@@ -1339,7 +1357,10 @@ impl App {
                 let count = d.count;
                 self.submit_form.apply_directives(&d);
                 if count > 0 {
-                    self.set_status(format!("Loaded {} #SBATCH directive(s) from {}", count, name));
+                    self.set_status(format!(
+                        "Loaded {} #SBATCH directive(s) from {}",
+                        count, name
+                    ));
                 } else {
                     self.set_status(format!("No #SBATCH directives in {}", name));
                 }
@@ -1359,22 +1380,47 @@ impl App {
                 nav_table(&mut self.jobs_table_state, job_count, NavAction::Up, page);
             }
             KeyCode::PageDown => {
-                nav_table(&mut self.jobs_table_state, job_count, NavAction::PageDown, page);
+                nav_table(
+                    &mut self.jobs_table_state,
+                    job_count,
+                    NavAction::PageDown,
+                    page,
+                );
             }
             KeyCode::PageUp => {
-                nav_table(&mut self.jobs_table_state, job_count, NavAction::PageUp, page);
+                nav_table(
+                    &mut self.jobs_table_state,
+                    job_count,
+                    NavAction::PageUp,
+                    page,
+                );
             }
             KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                nav_table(&mut self.jobs_table_state, job_count, NavAction::PageDown, page);
+                nav_table(
+                    &mut self.jobs_table_state,
+                    job_count,
+                    NavAction::PageDown,
+                    page,
+                );
             }
             KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                nav_table(&mut self.jobs_table_state, job_count, NavAction::PageUp, page);
+                nav_table(
+                    &mut self.jobs_table_state,
+                    job_count,
+                    NavAction::PageUp,
+                    page,
+                );
             }
             KeyCode::Char('g') | KeyCode::Home => {
                 nav_table(&mut self.jobs_table_state, job_count, NavAction::Top, page);
             }
             KeyCode::Char('G') | KeyCode::End => {
-                nav_table(&mut self.jobs_table_state, job_count, NavAction::Bottom, page);
+                nav_table(
+                    &mut self.jobs_table_state,
+                    job_count,
+                    NavAction::Bottom,
+                    page,
+                );
             }
             KeyCode::Enter => {
                 if let Some(selected) = self.jobs_table_state.selected() {
@@ -1462,13 +1508,23 @@ impl App {
                 nav_table(&mut self.nodes_table_state, count, NavAction::Up, page);
             }
             KeyCode::PageDown => {
-                nav_table(&mut self.nodes_table_state, count, NavAction::PageDown, page);
+                nav_table(
+                    &mut self.nodes_table_state,
+                    count,
+                    NavAction::PageDown,
+                    page,
+                );
             }
             KeyCode::PageUp => {
                 nav_table(&mut self.nodes_table_state, count, NavAction::PageUp, page);
             }
             KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                nav_table(&mut self.nodes_table_state, count, NavAction::PageDown, page);
+                nav_table(
+                    &mut self.nodes_table_state,
+                    count,
+                    NavAction::PageDown,
+                    page,
+                );
             }
             KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 nav_table(&mut self.nodes_table_state, count, NavAction::PageUp, page);
@@ -1508,10 +1564,9 @@ impl App {
                     (self.submit_form.active_field + 1) % SubmitForm::FIELD_COUNT;
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.submit_form.active_field = (self.submit_form.active_field
-                    + SubmitForm::FIELD_COUNT
-                    - 1)
-                    % SubmitForm::FIELD_COUNT;
+                self.submit_form.active_field =
+                    (self.submit_form.active_field + SubmitForm::FIELD_COUNT - 1)
+                        % SubmitForm::FIELD_COUNT;
             }
             KeyCode::Char('g') | KeyCode::Home => {
                 self.submit_form.active_field = 0;
@@ -1525,9 +1580,10 @@ impl App {
                     let parts = &self.submit_form.available_partitions;
                     if !parts.is_empty() {
                         let current = &self.submit_form.partition;
-                        let idx = parts.iter().position(|p| p == current).map_or(0, |i| {
-                            (i + 1) % parts.len()
-                        });
+                        let idx = parts
+                            .iter()
+                            .position(|p| p == current)
+                            .map_or(0, |i| (i + 1) % parts.len());
                         self.submit_form.partition = parts[idx].clone();
                     }
                 } else {
@@ -1569,13 +1625,17 @@ impl App {
                 }
             }
             KeyCode::Char(c) => {
-                if let Some(field) = self.submit_form.field_value_mut(self.submit_form.active_field)
+                if let Some(field) = self
+                    .submit_form
+                    .field_value_mut(self.submit_form.active_field)
                 {
                     field.push(c);
                 }
             }
             KeyCode::Backspace => {
-                if let Some(field) = self.submit_form.field_value_mut(self.submit_form.active_field)
+                if let Some(field) = self
+                    .submit_form
+                    .field_value_mut(self.submit_form.active_field)
                 {
                     field.pop();
                 }
@@ -1595,22 +1655,47 @@ impl App {
                 nav_table(&mut self.history_table_state, count, NavAction::Up, page);
             }
             KeyCode::PageDown => {
-                nav_table(&mut self.history_table_state, count, NavAction::PageDown, page);
+                nav_table(
+                    &mut self.history_table_state,
+                    count,
+                    NavAction::PageDown,
+                    page,
+                );
             }
             KeyCode::PageUp => {
-                nav_table(&mut self.history_table_state, count, NavAction::PageUp, page);
+                nav_table(
+                    &mut self.history_table_state,
+                    count,
+                    NavAction::PageUp,
+                    page,
+                );
             }
             KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                nav_table(&mut self.history_table_state, count, NavAction::PageDown, page);
+                nav_table(
+                    &mut self.history_table_state,
+                    count,
+                    NavAction::PageDown,
+                    page,
+                );
             }
             KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                nav_table(&mut self.history_table_state, count, NavAction::PageUp, page);
+                nav_table(
+                    &mut self.history_table_state,
+                    count,
+                    NavAction::PageUp,
+                    page,
+                );
             }
             KeyCode::Char('g') | KeyCode::Home => {
                 nav_table(&mut self.history_table_state, count, NavAction::Top, page);
             }
             KeyCode::Char('G') | KeyCode::End => {
-                nav_table(&mut self.history_table_state, count, NavAction::Bottom, page);
+                nav_table(
+                    &mut self.history_table_state,
+                    count,
+                    NavAction::Bottom,
+                    page,
+                );
             }
             KeyCode::Enter => {
                 if let Some(selected) = self.history_table_state.selected() {
