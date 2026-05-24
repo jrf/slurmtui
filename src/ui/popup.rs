@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Row, Table, Wrap},
+    Frame,
 };
 
 use crate::app::{FilePicker, LogView};
@@ -40,8 +40,10 @@ pub fn render_job_detail(frame: &mut Frame, area: Rect, detail: &JobDetail, scro
         .borders(Borders::ALL)
         .border_style(Style::default().fg(colors::BLUE))
         .title(Span::styled(
-            " Job Detail (q:close, j/k:scroll) ",
-            Style::default().fg(colors::BLUE).add_modifier(Modifier::BOLD),
+            " Job Detail (q:close, j/k:scroll, g/G:top/bot) ",
+            Style::default()
+                .fg(colors::BLUE)
+                .add_modifier(Modifier::BOLD),
         ))
         .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
     let inner = block.inner(popup_area);
@@ -81,7 +83,9 @@ pub fn render_confirm(frame: &mut Frame, area: Rect, message: &str) {
         .border_style(Style::default().fg(colors::YELLOW))
         .title(Span::styled(
             " Confirm ",
-            Style::default().fg(colors::YELLOW).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(colors::YELLOW)
+                .add_modifier(Modifier::BOLD),
         ))
         .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
     let inner = block.inner(popup_area);
@@ -91,9 +95,19 @@ pub fn render_confirm(frame: &mut Frame, area: Rect, message: &str) {
         Line::from(Span::styled(message, Style::default().fg(colors::FG))),
         Line::from(""),
         Line::from(vec![
-            Span::styled("y", Style::default().fg(colors::GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "y",
+                Style::default()
+                    .fg(colors::GREEN)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(":yes  ", Style::default().fg(colors::DARK5)),
-            Span::styled("n", Style::default().fg(colors::RED).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "n",
+                Style::default()
+                    .fg(colors::RED)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(":no", Style::default().fg(colors::DARK5)),
         ]),
     ];
@@ -124,7 +138,9 @@ pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
         .border_style(Style::default().fg(colors::BLUE))
         .title(Span::styled(
             title,
-            Style::default().fg(colors::BLUE).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(colors::BLUE)
+                .add_modifier(Modifier::BOLD),
         ))
         .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
     let inner = block.inner(popup_area);
@@ -183,7 +199,9 @@ pub fn render_file_picker(frame: &mut Frame, area: Rect, picker: &FilePicker) {
         .border_style(Style::default().fg(colors::BLUE))
         .title(Span::styled(
             title,
-            Style::default().fg(colors::BLUE).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(colors::BLUE)
+                .add_modifier(Modifier::BOLD),
         ))
         .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
     let inner = block.inner(popup_area);
@@ -249,7 +267,12 @@ fn render_query_mode(frame: &mut Frame, inner: Rect, picker: &FilePicker) {
     let list_area = chunks[1];
 
     let prompt = Line::from(vec![
-        Span::styled("> ", Style::default().fg(colors::YELLOW).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "> ",
+            Style::default()
+                .fg(colors::YELLOW)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(picker.query.as_str(), Style::default().fg(colors::FG)),
         Span::styled("▌", Style::default().fg(colors::FG)),
     ]);
@@ -318,7 +341,10 @@ pub fn render_result(frame: &mut Frame, area: Rect, success: bool, message: &str
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(color))
-        .title(Span::styled(title, Style::default().fg(color).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            title,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ))
         .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
@@ -326,7 +352,10 @@ pub fn render_result(frame: &mut Frame, area: Rect, success: bool, message: &str
     let text = vec![
         Line::from(Span::styled(message, Style::default().fg(colors::FG))),
         Line::from(""),
-        Line::from(Span::styled("Press Enter or q to close", Style::default().fg(colors::DARK5))),
+        Line::from(Span::styled(
+            "Press Enter or q to close",
+            Style::default().fg(colors::DARK5),
+        )),
     ];
 
     let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });

@@ -1145,16 +1145,39 @@ impl App {
                 }
                 _ => {}
             },
-            Popup::JobDetail(_) => match key.code {
-                KeyCode::Esc | KeyCode::Char('q') => self.popup = Popup::None,
-                KeyCode::Char('j') | KeyCode::Down => {
-                    self.popup_scroll = self.popup_scroll.saturating_add(1);
+            Popup::JobDetail(detail) => {
+                let count = detail.fields.len();
+                let max_scroll = (count as u16).saturating_sub(1);
+                let page = 10u16;
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => self.popup = Popup::None,
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        self.popup_scroll = (self.popup_scroll + 1).min(max_scroll);
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.popup_scroll = self.popup_scroll.saturating_sub(1);
+                    }
+                    KeyCode::PageDown => {
+                        self.popup_scroll = (self.popup_scroll + page).min(max_scroll);
+                    }
+                    KeyCode::PageUp => {
+                        self.popup_scroll = self.popup_scroll.saturating_sub(page);
+                    }
+                    KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.popup_scroll = (self.popup_scroll + page).min(max_scroll);
+                    }
+                    KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.popup_scroll = self.popup_scroll.saturating_sub(page);
+                    }
+                    KeyCode::Char('g') | KeyCode::Home => {
+                        self.popup_scroll = 0;
+                    }
+                    KeyCode::Char('G') | KeyCode::End => {
+                        self.popup_scroll = max_scroll;
+                    }
+                    _ => {}
                 }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    self.popup_scroll = self.popup_scroll.saturating_sub(1);
-                }
-                _ => {}
-            },
+            }
             Popup::SubmitResult { .. } => match key.code {
                 KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => {
                     self.popup = Popup::None;
