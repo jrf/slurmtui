@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    Frame,
 };
 
 use crate::app::{cmp_history_col, App, HistorySort, SortDir};
@@ -24,14 +24,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         } else {
             Style::default().fg(colors::COMMENT)
         };
-        let search = Paragraph::new(search_text)
-            .style(cursor_style)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(colors::FG_GUTTER))
-                    .title(Span::styled(" Search ", Style::default().fg(colors::BLUE))),
-            );
+        let search = Paragraph::new(search_text).style(cursor_style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(colors::FG_GUTTER))
+                .title(Span::styled(" Search ", Style::default().fg(colors::BLUE))),
+        );
         frame.render_widget(search, chunks[0]);
 
         if app.history_search_active {
@@ -43,17 +41,27 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let search = app.history_search.to_lowercase();
-    let mut filtered: Vec<_> = app.history.iter().filter(|h| {
-        if search.is_empty() { return true; }
-        h.job_id.to_lowercase().contains(&search)
-            || h.job_name.to_lowercase().contains(&search)
-            || h.partition.to_lowercase().contains(&search)
-            || h.state.to_lowercase().contains(&search)
-    }).collect();
+    let mut filtered: Vec<_> = app
+        .history
+        .iter()
+        .filter(|h| {
+            if search.is_empty() {
+                return true;
+            }
+            h.job_id.to_lowercase().contains(&search)
+                || h.job_name.to_lowercase().contains(&search)
+                || h.partition.to_lowercase().contains(&search)
+                || h.state.to_lowercase().contains(&search)
+        })
+        .collect();
     let (hcol, hdir) = app.history_sort;
     filtered.sort_by(|a, b| {
         let ord = cmp_history_col(a, b, hcol);
-        if hdir == SortDir::Asc { ord } else { ord.reverse() }
+        if hdir == SortDir::Asc {
+            ord
+        } else {
+            ord.reverse()
+        }
     });
     let title = format!(
         " History - {} ({}) ",
@@ -110,14 +118,38 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             let rss_display = format_rss(&entry.max_rss);
 
             Row::new(vec![
-                Cell::from(Span::styled(entry.job_id.as_str(), Style::default().fg(colors::FG))),
-                Cell::from(Span::styled(entry.job_name.as_str(), Style::default().fg(colors::FG))),
-                Cell::from(Span::styled(entry.partition.as_str(), Style::default().fg(colors::FG_DARK))),
-                Cell::from(Span::styled(state_indicator, Style::default().fg(state_color))),
-                Cell::from(Span::styled(entry.elapsed.as_str(), Style::default().fg(colors::CYAN))),
-                Cell::from(Span::styled(entry.cpu_time.as_str(), Style::default().fg(colors::DARK5))),
-                Cell::from(Span::styled(rss_display, Style::default().fg(colors::MAGENTA))),
-                Cell::from(Span::styled(entry.exit_code.as_str(), Style::default().fg(colors::FG_DARK))),
+                Cell::from(Span::styled(
+                    entry.job_id.as_str(),
+                    Style::default().fg(colors::FG),
+                )),
+                Cell::from(Span::styled(
+                    entry.job_name.as_str(),
+                    Style::default().fg(colors::FG),
+                )),
+                Cell::from(Span::styled(
+                    entry.partition.as_str(),
+                    Style::default().fg(colors::FG_DARK),
+                )),
+                Cell::from(Span::styled(
+                    state_indicator,
+                    Style::default().fg(state_color),
+                )),
+                Cell::from(Span::styled(
+                    entry.elapsed.as_str(),
+                    Style::default().fg(colors::CYAN),
+                )),
+                Cell::from(Span::styled(
+                    entry.cpu_time.as_str(),
+                    Style::default().fg(colors::DARK5),
+                )),
+                Cell::from(Span::styled(
+                    rss_display,
+                    Style::default().fg(colors::MAGENTA),
+                )),
+                Cell::from(Span::styled(
+                    entry.exit_code.as_str(),
+                    Style::default().fg(colors::FG_DARK),
+                )),
             ])
         })
         .collect();
@@ -125,13 +157,19 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let table_area = chunks[1];
     app.history_viewport = table_area.height.saturating_sub(3).max(1);
     if rows.is_empty() {
-        let msg = Paragraph::new(Line::from(Span::styled("No history entries", Style::default().fg(colors::COMMENT))).centered())
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(colors::FG_GUTTER))
-                    .title(Span::styled(title, Style::default().fg(colors::BLUE))),
-            );
+        let msg = Paragraph::new(
+            Line::from(Span::styled(
+                "No history entries",
+                Style::default().fg(colors::COMMENT),
+            ))
+            .centered(),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(colors::FG_GUTTER))
+                .title(Span::styled(title, Style::default().fg(colors::BLUE))),
+        );
         frame.render_widget(msg, table_area);
     } else {
         let widths = [

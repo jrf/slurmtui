@@ -1,5 +1,5 @@
 [package]
-name = "slurmtop"
+name = "slurmtui"
 version = "0.1.0"
 edition = "2024"
 description = "A top-like terminal UI for Slurm HPC clusters"

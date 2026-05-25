@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
+    Frame,
 };
 
 use crate::app::App;
@@ -21,7 +21,10 @@ fn render_form(frame: &mut Frame, area: Rect, form: &SubmitForm) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(colors::FG_GUTTER))
-        .title(Span::styled(" Submit Job ", Style::default().fg(colors::BLUE)));
+        .title(Span::styled(
+            " Submit Job ",
+            Style::default().fg(colors::BLUE),
+        ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -85,10 +88,7 @@ fn render_form(frame: &mut Frame, area: Rect, form: &SubmitForm) {
         frame.render_widget(value_widget, value_area);
 
         if is_editing {
-            frame.set_cursor_position((
-                value_area.x + value.len() as u16,
-                value_area.y,
-            ));
+            frame.set_cursor_position((value_area.x + value.len() as u16, value_area.y));
         }
 
         y += field_height + spacing;
@@ -102,7 +102,10 @@ fn render_preview(frame: &mut Frame, area: Rect, form: &SubmitForm) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(colors::FG_GUTTER))
-                .title(Span::styled(" Command Preview ", Style::default().fg(colors::BLUE))),
+                .title(Span::styled(
+                    " Command Preview ",
+                    Style::default().fg(colors::BLUE),
+                )),
         )
         .wrap(Wrap { trim: false })
         .style(Style::default().fg(colors::TEAL));

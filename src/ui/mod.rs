@@ -5,11 +5,11 @@ mod popup;
 mod submit;
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs},
+    Frame,
 };
 
 use crate::app::{App, Popup, Tab};
@@ -36,7 +36,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
     match &app.popup {
         Popup::None => {}
-        Popup::JobDetail(detail) => popup::render_job_detail(frame, frame.area(), detail, app.popup_scroll),
+        Popup::JobDetail(detail) => {
+            popup::render_job_detail(frame, frame.area(), detail, app.popup_scroll)
+        }
         Popup::ConfirmCancel { job_id } => {
             popup::render_confirm(frame, frame.area(), &format!("Cancel job {}?", job_id));
         }
@@ -60,9 +62,7 @@ fn render_tab_bar(frame: &mut Frame, area: Rect, app: &App) {
     let titles: Vec<Line> = Tab::ALL
         .iter()
         .enumerate()
-        .map(|(i, tab)| {
-            Line::from(format!(" {} {} ", i + 1, tab.title()))
-        })
+        .map(|(i, tab)| Line::from(format!(" {} {} ", i + 1, tab.title())))
         .collect();
 
     let refresh_secs = app.time_until_refresh().as_secs();
@@ -77,8 +77,19 @@ fn render_tab_bar(frame: &mut Frame, area: Rect, app: &App) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(colors::FG_GUTTER))
-                .title(Span::styled(" slurmtop ", Style::default().fg(colors::BLUE).add_modifier(Modifier::BOLD)))
-                .title_bottom(Line::from(Span::styled(format!(" {} ", right_text), Style::default().fg(colors::DARK5))).right_aligned()),
+                .title(Span::styled(
+                    " slurmtui ",
+                    Style::default()
+                        .fg(colors::BLUE)
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .title_bottom(
+                    Line::from(Span::styled(
+                        format!(" {} ", right_text),
+                        Style::default().fg(colors::DARK5),
+                    ))
+                    .right_aligned(),
+                ),
         )
         .select(app.active_tab.index())
         .style(Style::default().fg(colors::DARK5))
@@ -96,72 +107,112 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         Tab::Jobs => {
             if app.job_search_active {
                 vec![
-                    key_span("Esc"), desc_span(":Done  "),
-                    key_span("Type"), desc_span(":Search"),
+                    key_span("Esc"),
+                    desc_span(":Done  "),
+                    key_span("Type"),
+                    desc_span(":Search"),
                 ]
             } else {
                 vec![
-                    key_span("j/k"), desc_span(":Nav  "),
-                    key_span("Enter"), desc_span(":Detail  "),
-                    key_span("o"), desc_span(":Out  "),
-                    key_span("O"), desc_span(":Err  "),
-                    key_span("d"), desc_span(":Cancel  "),
-                    key_span("/"), desc_span(":Search  "),
-                    key_span("f"), desc_span(":Filter  "),
-                    key_span("s/S"), desc_span(":Sort  "),
-                    key_span("r"), desc_span(":Refresh  "),
-                    key_span("q"), desc_span(":Quit"),
+                    key_span("j/k"),
+                    desc_span(":Nav  "),
+                    key_span("Enter"),
+                    desc_span(":Detail  "),
+                    key_span("o"),
+                    desc_span(":Out  "),
+                    key_span("O"),
+                    desc_span(":Err  "),
+                    key_span("d"),
+                    desc_span(":Cancel  "),
+                    key_span("/"),
+                    desc_span(":Search  "),
+                    key_span("f"),
+                    desc_span(":Filter  "),
+                    key_span("s/S"),
+                    desc_span(":Sort  "),
+                    key_span("r"),
+                    desc_span(":Refresh  "),
+                    key_span("q"),
+                    desc_span(":Quit"),
                 ]
             }
         }
         Tab::Nodes => vec![
-            key_span("j/k"), desc_span(":Nav  "),
-            key_span("s/S"), desc_span(":Sort  "),
-            key_span("r"), desc_span(":Refresh  "),
-            key_span("q"), desc_span(":Quit"),
+            key_span("j/k"),
+            desc_span(":Nav  "),
+            key_span("s/S"),
+            desc_span(":Sort  "),
+            key_span("r"),
+            desc_span(":Refresh  "),
+            key_span("q"),
+            desc_span(":Quit"),
         ],
         Tab::Submit => {
             if app.submit_form.editing {
                 vec![
-                    key_span("Type"), desc_span(":Input  "),
-                    key_span("Enter/Esc"), desc_span(":Done"),
+                    key_span("Type"),
+                    desc_span(":Input  "),
+                    key_span("Enter/Esc"),
+                    desc_span(":Done"),
                 ]
             } else if app.submit_form.active_field == 0 {
                 vec![
-                    key_span("j/k"), desc_span(":Field  "),
-                    key_span("Enter"), desc_span(":Edit  "),
-                    key_span("b"), desc_span(":Browse  "),
-                    key_span("c"), desc_span(":Clear  "),
-                    key_span("C-s"), desc_span(":Submit  "),
-                    key_span("q"), desc_span(":Quit"),
+                    key_span("j/k"),
+                    desc_span(":Field  "),
+                    key_span("Enter"),
+                    desc_span(":Edit  "),
+                    key_span("b"),
+                    desc_span(":Browse  "),
+                    key_span("c"),
+                    desc_span(":Clear  "),
+                    key_span("C-s"),
+                    desc_span(":Submit  "),
+                    key_span("q"),
+                    desc_span(":Quit"),
                 ]
             } else {
                 vec![
-                    key_span("j/k"), desc_span(":Field  "),
-                    key_span("Enter"), desc_span(":Edit  "),
-                    key_span("c"), desc_span(":Clear  "),
-                    key_span("C-s"), desc_span(":Submit  "),
-                    key_span("q"), desc_span(":Quit"),
+                    key_span("j/k"),
+                    desc_span(":Field  "),
+                    key_span("Enter"),
+                    desc_span(":Edit  "),
+                    key_span("c"),
+                    desc_span(":Clear  "),
+                    key_span("C-s"),
+                    desc_span(":Submit  "),
+                    key_span("q"),
+                    desc_span(":Quit"),
                 ]
             }
         }
         Tab::History => {
             if app.history_search_active {
                 vec![
-                    key_span("Esc"), desc_span(":Done  "),
-                    key_span("Type"), desc_span(":Search"),
+                    key_span("Esc"),
+                    desc_span(":Done  "),
+                    key_span("Type"),
+                    desc_span(":Search"),
                 ]
             } else {
                 vec![
-                    key_span("j/k"), desc_span(":Nav  "),
-                    key_span("Enter"), desc_span(":Detail  "),
-                    key_span("o"), desc_span(":Out  "),
-                    key_span("O"), desc_span(":Err  "),
-                    key_span("/"), desc_span(":Search  "),
-                    key_span("f"), desc_span(":Range  "),
-                    key_span("s/S"), desc_span(":Sort  "),
-                    key_span("r"), desc_span(":Refresh  "),
-                    key_span("q"), desc_span(":Quit"),
+                    key_span("j/k"),
+                    desc_span(":Nav  "),
+                    key_span("Enter"),
+                    desc_span(":Detail  "),
+                    key_span("o"),
+                    desc_span(":Out  "),
+                    key_span("O"),
+                    desc_span(":Err  "),
+                    key_span("/"),
+                    desc_span(":Search  "),
+                    key_span("f"),
+                    desc_span(":Range  "),
+                    key_span("s/S"),
+                    desc_span(":Sort  "),
+                    key_span("r"),
+                    desc_span(":Refresh  "),
+                    key_span("q"),
+                    desc_span(":Quit"),
                 ]
             }
         }
@@ -172,7 +223,12 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn key_span(text: &str) -> Span<'_> {
-    Span::styled(text, Style::default().fg(colors::YELLOW).add_modifier(Modifier::BOLD))
+    Span::styled(
+        text,
+        Style::default()
+            .fg(colors::YELLOW)
+            .add_modifier(Modifier::BOLD),
+    )
 }
 
 fn desc_span(text: &str) -> Span<'_> {

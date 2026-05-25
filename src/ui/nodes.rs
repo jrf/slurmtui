@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    Frame,
 };
 
 use crate::app::{cmp_node_col, App, NodeSort, SortDir};
@@ -15,7 +15,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let (ncol, ndir) = app.nodes_sort;
     partitions.sort_by(|a, b| {
         let ord = cmp_node_col(a, b, ncol);
-        if ndir == SortDir::Asc { ord } else { ord.reverse() }
+        if ndir == SortDir::Asc {
+            ord
+        } else {
+            ord.reverse()
+        }
     });
     let title = format!(" Partitions ({}) ", partitions.len());
 
@@ -76,26 +80,53 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 
             Row::new(vec![
                 Cell::from(Span::styled(p.partition.as_str(), partition_style)),
-                Cell::from(Span::styled(p.avail.as_str(), Style::default().fg(colors::FG_DARK))),
-                Cell::from(Span::styled(p.time_limit.as_str(), Style::default().fg(colors::DARK5))),
-                Cell::from(Span::styled(p.nodes.to_string(), Style::default().fg(colors::MAGENTA))),
-                Cell::from(Span::styled(p.state.as_str(), Style::default().fg(state_color))),
-                Cell::from(Span::styled(p.cpus_per_node.to_string(), Style::default().fg(colors::MAGENTA))),
+                Cell::from(Span::styled(
+                    p.avail.as_str(),
+                    Style::default().fg(colors::FG_DARK),
+                )),
+                Cell::from(Span::styled(
+                    p.time_limit.as_str(),
+                    Style::default().fg(colors::DARK5),
+                )),
+                Cell::from(Span::styled(
+                    p.nodes.to_string(),
+                    Style::default().fg(colors::MAGENTA),
+                )),
+                Cell::from(Span::styled(
+                    p.state.as_str(),
+                    Style::default().fg(state_color),
+                )),
+                Cell::from(Span::styled(
+                    p.cpus_per_node.to_string(),
+                    Style::default().fg(colors::MAGENTA),
+                )),
                 Cell::from(Span::styled(mem_gb, Style::default().fg(colors::MAGENTA))),
-                Cell::from(Span::styled(gres_display, Style::default().fg(colors::CYAN))),
-                Cell::from(Span::styled(p.nodelist.as_str(), Style::default().fg(colors::FG_DARK))),
+                Cell::from(Span::styled(
+                    gres_display,
+                    Style::default().fg(colors::CYAN),
+                )),
+                Cell::from(Span::styled(
+                    p.nodelist.as_str(),
+                    Style::default().fg(colors::FG_DARK),
+                )),
             ])
         })
         .collect();
 
     if rows.is_empty() {
-        let msg = Paragraph::new(Line::from(Span::styled("No partition data", Style::default().fg(colors::COMMENT))).centered())
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(colors::FG_GUTTER))
-                    .title(Span::styled(title, Style::default().fg(colors::BLUE))),
-            );
+        let msg = Paragraph::new(
+            Line::from(Span::styled(
+                "No partition data",
+                Style::default().fg(colors::COMMENT),
+            ))
+            .centered(),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(colors::FG_GUTTER))
+                .title(Span::styled(title, Style::default().fg(colors::BLUE))),
+        );
         frame.render_widget(msg, area);
     } else {
         let widths = [

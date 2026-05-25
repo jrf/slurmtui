@@ -8,7 +8,7 @@ release:
     cargo build --release
 
 install: release
-    cp target/release/slurmtop ~/.cargo/bin/
+    cp target/release/slurmtui ~/.cargo/bin/
 
 run:
     cargo run

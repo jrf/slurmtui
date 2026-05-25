@@ -1,4 +1,4 @@
-# slurmtop
+# slurmtui
 
 A terminal UI for managing Slurm HPC cluster jobs, built with Rust.
 
@@ -22,7 +22,7 @@ just install
 ## Usage
 
 ```bash
-slurmtop
+slurmtui
 ```
 
 ## Key Bindings

@@ -138,19 +138,14 @@ pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
 
     let follow_label = if view.follow { "ON" } else { "off" };
     let popup_inner_w = popup_area.width.saturating_sub(2) as usize;
-    let prefix = format!(
-        " Log [{}] job {} — ",
-        view.kind.label(),
-        view.job_id,
-    );
+    let prefix = format!(" Log [{}] job {} — ", view.kind.label(), view.job_id,);
     let suffix = format!(" (follow:{}) ", follow_label);
     let path_raw = if view.path.is_empty() {
         "(no path)".to_string()
     } else {
         view.path.clone()
     };
-    let path_budget = popup_inner_w
-        .saturating_sub(prefix.chars().count() + suffix.chars().count());
+    let path_budget = popup_inner_w.saturating_sub(prefix.chars().count() + suffix.chars().count());
     let path_display = truncate_path(&path_raw, path_budget);
     let title = format!("{}{}{}", prefix, path_display, suffix);
 
@@ -165,8 +160,7 @@ pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
                 .add_modifier(Modifier::BOLD),
         ))
         .title_bottom(
-            Line::from(Span::styled(hints, Style::default().fg(colors::DARK5)))
-                .right_aligned(),
+            Line::from(Span::styled(hints, Style::default().fg(colors::DARK5))).right_aligned(),
         )
         .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
     let inner = block.inner(popup_area);
