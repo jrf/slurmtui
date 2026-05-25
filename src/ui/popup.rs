@@ -32,6 +32,22 @@ fn small_centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     Rect::new(x, y, width.min(area.width), height.min(area.height))
 }
 
+/// Truncate a path to fit a char budget, keeping the tail (which is usually
+/// the most informative — basename). Prefixes with `…` when shortened.
+fn truncate_path(path: &str, max_chars: usize) -> String {
+    let len = path.chars().count();
+    if len <= max_chars {
+        return path.to_string();
+    }
+    if max_chars <= 1 {
+        return "…".to_string();
+    }
+    let keep = max_chars - 1;
+    let skip = len - keep;
+    let tail: String = path.chars().skip(skip).collect();
+    format!("…{}", tail)
+}
+
 pub fn render_job_detail(frame: &mut Frame, area: Rect, detail: &JobDetail, scroll: u16) {
     let popup_area = centered_rect(70, 75, area);
     frame.render_widget(Clear, popup_area);
@@ -121,18 +137,24 @@ pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
     frame.render_widget(Clear, popup_area);
 
     let follow_label = if view.follow { "ON" } else { "off" };
-    let title_path = if view.path.is_empty() {
+    let popup_inner_w = popup_area.width.saturating_sub(2) as usize;
+    let prefix = format!(
+        " Log [{}] job {} — ",
+        view.kind.label(),
+        view.job_id,
+    );
+    let suffix = format!(" (follow:{}) ", follow_label);
+    let path_raw = if view.path.is_empty() {
         "(no path)".to_string()
     } else {
         view.path.clone()
     };
-    let title = format!(
-        " Log [{}] job {} — {} (follow:{}  f:toggle  r:reload  t:switch  j/k:scroll  g/G:top/bot  q:close) ",
-        view.kind.label(),
-        view.job_id,
-        title_path,
-        follow_label
-    );
+    let path_budget = popup_inner_w
+        .saturating_sub(prefix.chars().count() + suffix.chars().count());
+    let path_display = truncate_path(&path_raw, path_budget);
+    let title = format!("{}{}{}", prefix, path_display, suffix);
+
+    let hints = " f:toggle  r:reload  t:switch  j/k:scroll  g/G:top/bot  q:close ";
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(colors::BLUE))
@@ -142,6 +164,10 @@ pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
                 .fg(colors::BLUE)
                 .add_modifier(Modifier::BOLD),
         ))
+        .title_bottom(
+            Line::from(Span::styled(hints, Style::default().fg(colors::DARK5)))
+                .right_aligned(),
+        )
         .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
