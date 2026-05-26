@@ -504,6 +504,8 @@ pub enum JobSort {
 }
 
 impl JobSort {
+    pub const DEFAULT: (JobSort, SortDir) = (JobSort::JobId, SortDir::Asc);
+
     const ALL: [JobSort; 10] = [
         JobSort::JobId,
         JobSort::Name,
@@ -556,6 +558,8 @@ pub enum NodeSort {
 }
 
 impl NodeSort {
+    pub const DEFAULT: (NodeSort, SortDir) = (NodeSort::Partition, SortDir::Asc);
+
     const ALL: [NodeSort; 7] = [
         NodeSort::Partition,
         NodeSort::Avail,
@@ -602,6 +606,8 @@ pub enum HistorySort {
 }
 
 impl HistorySort {
+    pub const DEFAULT: (HistorySort, SortDir) = (HistorySort::JobId, SortDir::Desc);
+
     const ALL: [HistorySort; 7] = [
         HistorySort::JobId,
         HistorySort::Name,
@@ -876,9 +882,9 @@ impl App {
             nodes_viewport: DEFAULT_VIEWPORT,
             history_viewport: DEFAULT_VIEWPORT,
 
-            jobs_sort: (JobSort::JobId, SortDir::Asc),
-            nodes_sort: (NodeSort::Partition, SortDir::Asc),
-            history_sort: (HistorySort::JobId, SortDir::Desc),
+            jobs_sort: JobSort::DEFAULT,
+            nodes_sort: NodeSort::DEFAULT,
+            history_sort: HistorySort::DEFAULT,
         };
         app.refresh_all();
         app
@@ -1526,6 +1532,15 @@ impl App {
                     self.jobs_sort.1.arrow()
                 ));
             }
+            KeyCode::Char('0') => {
+                self.jobs_sort = JobSort::DEFAULT;
+                self.jobs_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {} (default)",
+                    self.jobs_sort.0.label(),
+                    self.jobs_sort.1.arrow()
+                ));
+            }
             KeyCode::Char('o') | KeyCode::Char('O') => {
                 let kind = if matches!(key.code, KeyCode::Char('O')) {
                     LogKind::StdErr
@@ -1608,6 +1623,15 @@ impl App {
                 self.nodes_table_state.select(None);
                 self.set_status(format!(
                     "Sort: {} {}",
+                    self.nodes_sort.0.label(),
+                    self.nodes_sort.1.arrow()
+                ));
+            }
+            KeyCode::Char('0') => {
+                self.nodes_sort = NodeSort::DEFAULT;
+                self.nodes_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {} (default)",
                     self.nodes_sort.0.label(),
                     self.nodes_sort.1.arrow()
                 ));
@@ -1802,6 +1826,15 @@ impl App {
                 self.history_table_state.select(None);
                 self.set_status(format!(
                     "Sort: {} {}",
+                    self.history_sort.0.label(),
+                    self.history_sort.1.arrow()
+                ));
+            }
+            KeyCode::Char('0') => {
+                self.history_sort = HistorySort::DEFAULT;
+                self.history_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {} (default)",
                     self.history_sort.0.label(),
                     self.history_sort.1.arrow()
                 ));
