@@ -536,6 +536,12 @@ impl JobSort {
         let i = Self::ALL.iter().position(|c| *c == self).unwrap_or(0);
         Self::ALL[(i + 1) % Self::ALL.len()]
     }
+
+    fn cycle_back(self) -> Self {
+        let n = Self::ALL.len();
+        let i = Self::ALL.iter().position(|c| *c == self).unwrap_or(0);
+        Self::ALL[(i + n - 1) % n]
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -576,6 +582,12 @@ impl NodeSort {
         let i = Self::ALL.iter().position(|c| *c == self).unwrap_or(0);
         Self::ALL[(i + 1) % Self::ALL.len()]
     }
+
+    fn cycle_back(self) -> Self {
+        let n = Self::ALL.len();
+        let i = Self::ALL.iter().position(|c| *c == self).unwrap_or(0);
+        Self::ALL[(i + n - 1) % n]
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -615,6 +627,12 @@ impl HistorySort {
     fn cycle(self) -> Self {
         let i = Self::ALL.iter().position(|c| *c == self).unwrap_or(0);
         Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+
+    fn cycle_back(self) -> Self {
+        let n = Self::ALL.len();
+        let i = Self::ALL.iter().position(|c| *c == self).unwrap_or(0);
+        Self::ALL[(i + n - 1) % n]
     }
 }
 
@@ -1481,7 +1499,7 @@ impl App {
                 self.jobs_table_state.select(None);
                 self.refresh_jobs();
             }
-            KeyCode::Char('s') if key.modifiers.is_empty() => {
+            KeyCode::Char('>') => {
                 self.jobs_sort.0 = self.jobs_sort.0.cycle();
                 self.jobs_table_state.select(None);
                 self.set_status(format!(
@@ -1490,7 +1508,16 @@ impl App {
                     self.jobs_sort.1.arrow()
                 ));
             }
-            KeyCode::Char('S') => {
+            KeyCode::Char('<') => {
+                self.jobs_sort.0 = self.jobs_sort.0.cycle_back();
+                self.jobs_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {}",
+                    self.jobs_sort.0.label(),
+                    self.jobs_sort.1.arrow()
+                ));
+            }
+            KeyCode::Char('s') if key.modifiers.is_empty() => {
                 self.jobs_sort.1 = self.jobs_sort.1.flip();
                 self.jobs_table_state.select(None);
                 self.set_status(format!(
@@ -1558,7 +1585,7 @@ impl App {
             KeyCode::Char('G') | KeyCode::End => {
                 nav_table(&mut self.nodes_table_state, count, NavAction::Bottom, page);
             }
-            KeyCode::Char('s') if key.modifiers.is_empty() => {
+            KeyCode::Char('>') => {
                 self.nodes_sort.0 = self.nodes_sort.0.cycle();
                 self.nodes_table_state.select(None);
                 self.set_status(format!(
@@ -1567,7 +1594,16 @@ impl App {
                     self.nodes_sort.1.arrow()
                 ));
             }
-            KeyCode::Char('S') => {
+            KeyCode::Char('<') => {
+                self.nodes_sort.0 = self.nodes_sort.0.cycle_back();
+                self.nodes_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {}",
+                    self.nodes_sort.0.label(),
+                    self.nodes_sort.1.arrow()
+                ));
+            }
+            KeyCode::Char('s') if key.modifiers.is_empty() => {
                 self.nodes_sort.1 = self.nodes_sort.1.flip();
                 self.nodes_table_state.select(None);
                 self.set_status(format!(
@@ -1743,7 +1779,7 @@ impl App {
                 self.history_table_state.select(None);
                 self.refresh_history();
             }
-            KeyCode::Char('s') if key.modifiers.is_empty() => {
+            KeyCode::Char('>') => {
                 self.history_sort.0 = self.history_sort.0.cycle();
                 self.history_table_state.select(None);
                 self.set_status(format!(
@@ -1752,7 +1788,16 @@ impl App {
                     self.history_sort.1.arrow()
                 ));
             }
-            KeyCode::Char('S') => {
+            KeyCode::Char('<') => {
+                self.history_sort.0 = self.history_sort.0.cycle_back();
+                self.history_table_state.select(None);
+                self.set_status(format!(
+                    "Sort: {} {}",
+                    self.history_sort.0.label(),
+                    self.history_sort.1.arrow()
+                ));
+            }
+            KeyCode::Char('s') if key.modifiers.is_empty() => {
                 self.history_sort.1 = self.history_sort.1.flip();
                 self.history_table_state.select(None);
                 self.set_status(format!(
