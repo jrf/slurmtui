@@ -1085,12 +1085,12 @@ impl App {
                 self.should_quit = true;
                 return;
             }
-            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
+            KeyCode::Tab | KeyCode::Right | KeyCode::Char('L') => {
                 let next = (self.active_tab.index() + 1) % Tab::ALL.len();
                 self.switch_to_tab(Tab::ALL[next]);
                 return;
             }
-            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
+            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('H') => {
                 let prev = (self.active_tab.index() + Tab::ALL.len() - 1) % Tab::ALL.len();
                 self.switch_to_tab(Tab::ALL[prev]);
                 return;
@@ -1505,7 +1505,7 @@ impl App {
                 self.jobs_table_state.select(None);
                 self.refresh_jobs();
             }
-            KeyCode::Char('>') => {
+            KeyCode::Char('>') | KeyCode::Char('l') => {
                 self.jobs_sort.0 = self.jobs_sort.0.cycle();
                 self.jobs_table_state.select(None);
                 self.set_status(format!(
@@ -1514,7 +1514,7 @@ impl App {
                     self.jobs_sort.1.arrow()
                 ));
             }
-            KeyCode::Char('<') => {
+            KeyCode::Char('<') | KeyCode::Char('h') => {
                 self.jobs_sort.0 = self.jobs_sort.0.cycle_back();
                 self.jobs_table_state.select(None);
                 self.set_status(format!(
@@ -1600,7 +1600,7 @@ impl App {
             KeyCode::Char('G') | KeyCode::End => {
                 nav_table(&mut self.nodes_table_state, count, NavAction::Bottom, page);
             }
-            KeyCode::Char('>') => {
+            KeyCode::Char('>') | KeyCode::Char('l') => {
                 self.nodes_sort.0 = self.nodes_sort.0.cycle();
                 self.nodes_table_state.select(None);
                 self.set_status(format!(
@@ -1609,7 +1609,7 @@ impl App {
                     self.nodes_sort.1.arrow()
                 ));
             }
-            KeyCode::Char('<') => {
+            KeyCode::Char('<') | KeyCode::Char('h') => {
                 self.nodes_sort.0 = self.nodes_sort.0.cycle_back();
                 self.nodes_table_state.select(None);
                 self.set_status(format!(
@@ -1803,7 +1803,7 @@ impl App {
                 self.history_table_state.select(None);
                 self.refresh_history();
             }
-            KeyCode::Char('>') => {
+            KeyCode::Char('>') | KeyCode::Char('l') => {
                 self.history_sort.0 = self.history_sort.0.cycle();
                 self.history_table_state.select(None);
                 self.set_status(format!(
@@ -1812,7 +1812,7 @@ impl App {
                     self.history_sort.1.arrow()
                 ));
             }
-            KeyCode::Char('<') => {
+            KeyCode::Char('<') | KeyCode::Char('h') => {
                 self.history_sort.0 = self.history_sort.0.cycle_back();
                 self.history_table_state.select(None);
                 self.set_status(format!(
