@@ -28,5 +28,7 @@
 - [x] Cancel job with confirmation #feature
 - [x] Auto-refresh every 30 seconds #feature
 - [x] GPU usage column in Jobs view (total + per-node for multi-node) #feature
+- [x] Async slurm calls via worker thread (non-blocking tab switches) #improvement
+- [x] Per-source refresh intervals (jobs 10s, nodes 30s, history manual) + idle pause #improvement
 
 ## Scrapped

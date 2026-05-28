@@ -7,6 +7,7 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::widgets::TableState;
 
 use crate::slurm::{self, HistoryEntry, Job, JobDetail, LogKind, PartitionInfo, SubmitForm};
+use crate::worker::{Request, Response, Worker};
 
 const WALK_CAP: usize = 10_000;
 const MATCH_LIMIT: usize = 500;
@@ -14,6 +15,7 @@ const DEFAULT_VIEWPORT: u16 = 10;
 const LOG_TAIL_LINES: usize = 500;
 const LOG_TAIL_BYTES: u64 = 256 * 1024;
 const LOG_FOLLOW_INTERVAL: Duration = Duration::from_secs(2);
+const IDLE_THRESHOLD: Duration = Duration::from_secs(120);
 
 pub struct LogView {
     pub job_id: String,
@@ -830,9 +832,21 @@ pub struct App {
     pub history_search: String,
     pub history_search_active: bool,
 
-    pub last_refresh: Instant,
-    pub refresh_interval: Duration,
+    pub jobs_last_refresh: Instant,
+    pub partitions_last_refresh: Instant,
+    pub last_input: Instant,
+    pub jobs_refresh_interval: Duration,
+    pub partitions_refresh_interval: Duration,
     pub username: String,
+
+    pub worker: Worker,
+    pub jobs_seq: u64,
+    pub partitions_seq: u64,
+    pub history_seq: u64,
+    pub partition_names_seq: u64,
+    pub jobs_in_flight: bool,
+    pub partitions_in_flight: bool,
+    pub history_in_flight: bool,
 
     pub status_message: Option<(String, Instant)>,
 
@@ -872,9 +886,21 @@ impl App {
             history_search: String::new(),
             history_search_active: false,
 
-            last_refresh: Instant::now(),
-            refresh_interval: Duration::from_secs(10),
+            jobs_last_refresh: Instant::now(),
+            partitions_last_refresh: Instant::now(),
+            last_input: Instant::now(),
+            jobs_refresh_interval: Duration::from_secs(10),
+            partitions_refresh_interval: Duration::from_secs(30),
             username,
+
+            worker: Worker::spawn(),
+            jobs_seq: 0,
+            partitions_seq: 0,
+            history_seq: 0,
+            partition_names_seq: 0,
+            jobs_in_flight: false,
+            partitions_in_flight: false,
+            history_in_flight: false,
 
             status_message: None,
 
@@ -890,17 +916,18 @@ impl App {
         app
     }
 
-    pub fn time_until_refresh(&self) -> Duration {
-        let main = self
-            .refresh_interval
-            .saturating_sub(self.last_refresh.elapsed());
-        if let Popup::LogView(ref v) = self.popup {
-            if v.follow {
-                let follow_left = LOG_FOLLOW_INTERVAL.saturating_sub(v.last_read.elapsed());
-                return main.min(follow_left);
-            }
+    pub fn time_until_active_refresh(&self) -> Option<Duration> {
+        match self.active_tab {
+            Tab::Jobs => Some(
+                self.jobs_refresh_interval
+                    .saturating_sub(self.jobs_last_refresh.elapsed()),
+            ),
+            Tab::Nodes => Some(
+                self.partitions_refresh_interval
+                    .saturating_sub(self.partitions_last_refresh.elapsed()),
+            ),
+            Tab::Submit | Tab::History => None,
         }
-        main
     }
 
     pub fn tick(&mut self) {
@@ -915,9 +942,18 @@ impl App {
                 v.reload();
             }
         }
-        if self.last_refresh.elapsed() >= self.refresh_interval {
-            self.refresh_active_tab();
-            self.last_refresh = Instant::now();
+        if self.last_input.elapsed() >= IDLE_THRESHOLD {
+            return;
+        }
+        if self.active_tab == Tab::Jobs
+            && self.jobs_last_refresh.elapsed() >= self.jobs_refresh_interval
+        {
+            self.refresh_jobs();
+        }
+        if self.active_tab == Tab::Nodes
+            && self.partitions_last_refresh.elapsed() >= self.partitions_refresh_interval
+        {
+            self.refresh_partitions();
         }
     }
 
@@ -926,7 +962,6 @@ impl App {
         self.refresh_partitions();
         self.refresh_history();
         self.load_partition_names();
-        self.last_refresh = Instant::now();
     }
 
     fn switch_to_tab(&mut self, tab: Tab) {
@@ -942,44 +977,113 @@ impl App {
             Tab::Jobs => self.refresh_jobs(),
             Tab::Nodes => self.refresh_partitions(),
             Tab::Submit => {}
+            Tab::History => {}
+        }
+    }
+
+    fn refresh_active_tab_force(&mut self) {
+        match self.active_tab {
+            Tab::Jobs => self.refresh_jobs(),
+            Tab::Nodes => self.refresh_partitions(),
+            Tab::Submit => {}
             Tab::History => self.refresh_history(),
         }
-        self.last_refresh = Instant::now();
     }
 
-    fn refresh_jobs(&mut self) {
-        let filter = match self.job_filter {
-            JobFilter::MyJobs => Some(self.username.as_str()),
+    pub fn refresh_jobs(&mut self) {
+        self.jobs_seq = self.jobs_seq.wrapping_add(1);
+        let filter_user = match self.job_filter {
+            JobFilter::MyJobs => Some(self.username.clone()),
             JobFilter::AllJobs => None,
         };
-        match slurm::fetch_jobs(filter) {
-            Ok(jobs) => {
-                let count = jobs.len();
-                self.jobs = jobs;
-                self.set_status(format!("{} jobs loaded", count));
-            }
-            Err(e) => self.set_status(format!("squeue error: {}", e)),
-        }
+        self.worker.send(Request::FetchJobs {
+            seq: self.jobs_seq,
+            filter_user,
+        });
+        self.jobs_in_flight = true;
+        self.jobs_last_refresh = Instant::now();
+        self.set_status("Loading jobs…".to_string());
     }
 
-    fn refresh_partitions(&mut self) {
-        match slurm::fetch_partitions() {
-            Ok(parts) => self.partitions = parts,
-            Err(e) => self.set_status(format!("sinfo error: {}", e)),
-        }
+    pub fn refresh_partitions(&mut self) {
+        self.partitions_seq = self.partitions_seq.wrapping_add(1);
+        self.worker.send(Request::FetchPartitions {
+            seq: self.partitions_seq,
+        });
+        self.partitions_in_flight = true;
+        self.partitions_last_refresh = Instant::now();
+        self.set_status("Loading nodes…".to_string());
     }
 
-    fn refresh_history(&mut self) {
+    pub fn refresh_history(&mut self) {
+        self.history_seq = self.history_seq.wrapping_add(1);
         let start = self.history_range.start_date();
-        match slurm::fetch_history(&self.username, &start) {
-            Ok(entries) => self.history = entries,
-            Err(e) => self.set_status(format!("sacct error: {}", e)),
-        }
+        self.worker.send(Request::FetchHistory {
+            seq: self.history_seq,
+            user: self.username.clone(),
+            start,
+        });
+        self.history_in_flight = true;
+        self.set_status("Loading history…".to_string());
     }
 
     fn load_partition_names(&mut self) {
-        if let Ok(names) = slurm::fetch_partition_names() {
-            self.submit_form.available_partitions = names;
+        self.partition_names_seq = self.partition_names_seq.wrapping_add(1);
+        self.worker.send(Request::FetchPartitionNames {
+            seq: self.partition_names_seq,
+        });
+    }
+
+    pub fn poll_worker(&mut self) {
+        while let Some(resp) = self.worker.try_recv() {
+            match resp {
+                Response::Jobs { seq, result } => {
+                    if seq != self.jobs_seq {
+                        continue;
+                    }
+                    self.jobs_in_flight = false;
+                    match result {
+                        Ok(jobs) => {
+                            let count = jobs.len();
+                            self.jobs = jobs;
+                            self.set_status(format!("{} jobs loaded", count));
+                        }
+                        Err(e) => self.set_status(format!("squeue error: {}", e)),
+                    }
+                }
+                Response::Partitions { seq, result } => {
+                    if seq != self.partitions_seq {
+                        continue;
+                    }
+                    self.partitions_in_flight = false;
+                    match result {
+                        Ok(parts) => self.partitions = parts,
+                        Err(e) => self.set_status(format!("sinfo error: {}", e)),
+                    }
+                }
+                Response::History { seq, result } => {
+                    if seq != self.history_seq {
+                        continue;
+                    }
+                    self.history_in_flight = false;
+                    match result {
+                        Ok(entries) => {
+                            let count = entries.len();
+                            self.history = entries;
+                            self.set_status(format!("{} history entries loaded", count));
+                        }
+                        Err(e) => self.set_status(format!("sacct error: {}", e)),
+                    }
+                }
+                Response::PartitionNames { seq, result } => {
+                    if seq != self.partition_names_seq {
+                        continue;
+                    }
+                    if let Ok(names) = result {
+                        self.submit_form.available_partitions = names;
+                    }
+                }
+            }
         }
     }
 
@@ -1053,6 +1157,7 @@ impl App {
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
+        self.last_input = Instant::now();
         // Popup handling takes priority
         if !matches!(self.popup, Popup::None) {
             self.on_key_popup(key);
@@ -1112,7 +1217,7 @@ impl App {
                 return;
             }
             KeyCode::Char('r') => {
-                self.refresh_active_tab();
+                self.refresh_active_tab_force();
                 return;
             }
             _ => {}

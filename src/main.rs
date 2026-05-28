@@ -3,8 +3,10 @@ mod colors;
 mod event;
 mod slurm;
 mod ui;
+mod worker;
 
 use std::io;
+use std::time::Duration;
 
 use crossterm::{
     ExecutableCommand,
@@ -14,6 +16,8 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 
 use app::App;
 use event::{AppEvent, poll_event};
+
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 fn main() -> io::Result<()> {
     let original_hook = std::panic::take_hook();
@@ -33,11 +37,14 @@ fn main() -> io::Result<()> {
     loop {
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
 
-        let timeout = app.time_until_refresh();
-        match poll_event(timeout) {
+        app.poll_worker();
+
+        match poll_event(POLL_INTERVAL) {
             AppEvent::Key(key) => app.on_key(key),
             AppEvent::Tick => app.tick(),
         }
+
+        app.poll_worker();
 
         if app.should_quit {
             break;
