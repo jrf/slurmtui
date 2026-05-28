@@ -1,5 +1,5 @@
-use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
-use std::thread::{self, JoinHandle};
+use std::sync::mpsc::{Receiver, Sender, channel};
+use std::thread;
 
 use crate::slurm::{self, HistoryEntry, Job, PartitionInfo};
 
@@ -8,7 +8,6 @@ pub enum Request {
     FetchPartitions { seq: u64 },
     FetchHistory { seq: u64, user: String, start: String },
     FetchPartitionNames { seq: u64 },
-    Shutdown,
 }
 
 pub enum Response {
@@ -19,66 +18,73 @@ pub enum Response {
 }
 
 pub struct Worker {
-    tx: Sender<Request>,
+    jobs_tx: Sender<Request>,
+    partitions_tx: Sender<Request>,
+    history_tx: Sender<Request>,
+    partition_names_tx: Sender<Request>,
     rx: Receiver<Response>,
-    handle: Option<JoinHandle<()>>,
 }
 
 impl Worker {
     pub fn spawn() -> Self {
-        let (req_tx, req_rx) = channel::<Request>();
         let (resp_tx, resp_rx) = channel::<Response>();
 
-        let handle = thread::spawn(move || run(req_rx, resp_tx));
+        let jobs_tx = spawn_worker(resp_tx.clone());
+        let partitions_tx = spawn_worker(resp_tx.clone());
+        let history_tx = spawn_worker(resp_tx.clone());
+        let partition_names_tx = spawn_worker(resp_tx);
 
         Self {
-            tx: req_tx,
+            jobs_tx,
+            partitions_tx,
+            history_tx,
+            partition_names_tx,
             rx: resp_rx,
-            handle: Some(handle),
         }
     }
 
     pub fn send(&self, req: Request) {
-        let _ = self.tx.send(req);
+        let _ = match &req {
+            Request::FetchJobs { .. } => self.jobs_tx.send(req),
+            Request::FetchPartitions { .. } => self.partitions_tx.send(req),
+            Request::FetchHistory { .. } => self.history_tx.send(req),
+            Request::FetchPartitionNames { .. } => self.partition_names_tx.send(req),
+        };
     }
 
     pub fn try_recv(&self) -> Option<Response> {
-        match self.rx.try_recv() {
-            Ok(r) => Some(r),
-            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => None,
-        }
+        self.rx.try_recv().ok()
     }
 }
 
-impl Drop for Worker {
-    fn drop(&mut self) {
-        let _ = self.tx.send(Request::Shutdown);
-        if let Some(h) = self.handle.take() {
-            let _ = h.join();
-        }
-    }
+fn spawn_worker(tx: Sender<Response>) -> Sender<Request> {
+    let (req_tx, req_rx) = channel::<Request>();
+    thread::spawn(move || run(req_rx, tx));
+    req_tx
 }
 
 fn run(rx: Receiver<Request>, tx: Sender<Response>) {
     while let Ok(req) = rx.recv() {
-        match req {
-            Request::Shutdown => break,
-            Request::FetchJobs { seq, filter_user } => {
-                let result = slurm::fetch_jobs(filter_user.as_deref());
-                let _ = tx.send(Response::Jobs { seq, result });
-            }
-            Request::FetchPartitions { seq } => {
-                let result = slurm::fetch_partitions();
-                let _ = tx.send(Response::Partitions { seq, result });
-            }
-            Request::FetchHistory { seq, user, start } => {
-                let result = slurm::fetch_history(&user, &start);
-                let _ = tx.send(Response::History { seq, result });
-            }
-            Request::FetchPartitionNames { seq } => {
-                let result = slurm::fetch_partition_names();
-                let _ = tx.send(Response::PartitionNames { seq, result });
-            }
+        let resp = match req {
+            Request::FetchJobs { seq, filter_user } => Response::Jobs {
+                seq,
+                result: slurm::fetch_jobs(filter_user.as_deref()),
+            },
+            Request::FetchPartitions { seq } => Response::Partitions {
+                seq,
+                result: slurm::fetch_partitions(),
+            },
+            Request::FetchHistory { seq, user, start } => Response::History {
+                seq,
+                result: slurm::fetch_history(&user, &start),
+            },
+            Request::FetchPartitionNames { seq } => Response::PartitionNames {
+                seq,
+                result: slurm::fetch_partition_names(),
+            },
+        };
+        if tx.send(resp).is_err() {
+            break;
         }
     }
 }
