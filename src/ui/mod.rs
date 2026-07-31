@@ -65,13 +65,7 @@ fn render_tab_bar(frame: &mut Frame, area: Rect, app: &App) {
         .map(|(i, tab)| Line::from(format!(" {} {} ", i + 1, tab.title())))
         .collect();
 
-    let right_text = if let Some(status) = app.status_text() {
-        status.to_string()
-    } else if let Some(left) = app.time_until_active_refresh() {
-        format!("↻ {}s", left.as_secs())
-    } else {
-        String::new()
-    };
+    let right_text = app.status_text().unwrap_or_default();
 
     let tabs = Tabs::new(titles)
         .block(

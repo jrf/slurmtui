@@ -916,20 +916,6 @@ impl App {
         app
     }
 
-    pub fn time_until_active_refresh(&self) -> Option<Duration> {
-        match self.active_tab {
-            Tab::Jobs => Some(
-                self.jobs_refresh_interval
-                    .saturating_sub(self.jobs_last_refresh.elapsed()),
-            ),
-            Tab::Nodes => Some(
-                self.partitions_refresh_interval
-                    .saturating_sub(self.partitions_last_refresh.elapsed()),
-            ),
-            Tab::Submit | Tab::History => None,
-        }
-    }
-
     pub fn tick(&mut self) {
         let mut log_should_reload = false;
         if let Popup::LogView(ref v) = self.popup
