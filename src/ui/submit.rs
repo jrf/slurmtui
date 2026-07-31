@@ -53,7 +53,7 @@ fn render_form(frame: &mut Frame, area: Rect, form: &SubmitForm) {
 
         let label_style = if is_active {
             Style::default()
-                .fg(colors::YELLOW)
+                .fg(colors::PURPLE)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(colors::DARK5)

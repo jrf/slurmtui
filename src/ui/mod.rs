@@ -233,7 +233,7 @@ fn key_span(text: &str) -> Span<'_> {
     Span::styled(
         text,
         Style::default()
-            .fg(colors::YELLOW)
+            .fg(colors::PURPLE)
             .add_modifier(Modifier::BOLD),
     )
 }

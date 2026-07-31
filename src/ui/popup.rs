@@ -76,7 +76,7 @@ pub fn render_job_detail(frame: &mut Frame, area: Rect, detail: &JobDetail, scro
                 Span::styled(
                     key.as_str(),
                     Style::default()
-                        .fg(colors::YELLOW)
+                        .fg(colors::PURPLE)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(value.as_str(), Style::default().fg(colors::FG)),
@@ -96,11 +96,11 @@ pub fn render_confirm(frame: &mut Frame, area: Rect, message: &str) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(colors::YELLOW))
+        .border_style(Style::default().fg(colors::PURPLE))
         .title(Span::styled(
             " Confirm ",
             Style::default()
-                .fg(colors::YELLOW)
+                .fg(colors::PURPLE)
                 .add_modifier(Modifier::BOLD),
         ))
         .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
@@ -290,7 +290,7 @@ fn render_query_mode(frame: &mut Frame, inner: Rect, picker: &FilePicker) {
         Span::styled(
             "> ",
             Style::default()
-                .fg(colors::YELLOW)
+                .fg(colors::PURPLE)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(picker.query.as_str(), Style::default().fg(colors::FG)),

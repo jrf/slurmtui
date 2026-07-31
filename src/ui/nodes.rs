@@ -78,7 +78,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .map(|p| {
             let state_color = match p.state.as_str() {
                 "idle" => colors::GREEN,
-                "mix" => colors::YELLOW,
+                "mix" => colors::PURPLE,
                 "alloc" | "allocated" => colors::BLUE1,
                 "down" | "down*" => colors::RED,
                 "drain" | "drng" => colors::COMMENT,

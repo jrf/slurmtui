@@ -20,7 +20,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     if show_search {
         let search_text = format!("/{}", app.history_search);
         let cursor_style = if app.history_search_active {
-            Style::default().fg(colors::YELLOW)
+            Style::default().fg(colors::PURPLE)
         } else {
             Style::default().fg(colors::COMMENT)
         };
@@ -142,7 +142,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 "CANCELLED" | "CANCELLED+" => colors::COMMENT,
                 "TIMEOUT" => colors::ORANGE,
                 "RUNNING" => colors::TEAL,
-                "PENDING" => colors::YELLOW,
+                "PENDING" => colors::PURPLE,
                 _ => colors::FG,
             };
             let state_indicator = match entry.state.as_str() {

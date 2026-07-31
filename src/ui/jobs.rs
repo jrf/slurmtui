@@ -20,7 +20,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     if show_search {
         let search_text = format!("/{}", app.job_search);
         let cursor_style = if app.job_search_active {
-            Style::default().fg(colors::YELLOW)
+            Style::default().fg(colors::PURPLE)
         } else {
             Style::default().fg(colors::COMMENT)
         };
@@ -149,7 +149,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                     "State" => {
                         let state_color = match job.state.as_str() {
                             "RUNNING" => colors::GREEN,
-                            "PENDING" => colors::YELLOW,
+                            "PENDING" => colors::PURPLE,
                             "COMPLETING" => colors::BLUE1,
                             "COMPLETED" => colors::TEAL,
                             "FAILED" => colors::RED,
