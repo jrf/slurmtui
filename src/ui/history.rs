@@ -77,17 +77,57 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             label.to_string()
         }
     };
-    let header = Row::new(vec![
-        Cell::from(hdr("Job ID", HistorySort::JobId)),
-        Cell::from(hdr("Name", HistorySort::Name)),
-        Cell::from(hdr("Partition", HistorySort::Partition)),
-        Cell::from(hdr("State", HistorySort::State)),
-        Cell::from(hdr("Elapsed", HistorySort::Elapsed)),
-        Cell::from(hdr("CPUTime", HistorySort::CpuTime)),
-        Cell::from(hdr("MaxRSS", HistorySort::MaxRss)),
-        Cell::from("Exit"),
-    ])
-    .style(
+
+    let col_specs = [
+        (
+            "Job ID",
+            Some(HistorySort::JobId),
+            Constraint::Length(10),
+            0,
+        ),
+        ("Name", Some(HistorySort::Name), Constraint::Fill(1), 0),
+        (
+            "Partition",
+            Some(HistorySort::Partition),
+            Constraint::Length(12),
+            85,
+        ),
+        ("State", Some(HistorySort::State), Constraint::Length(10), 0),
+        (
+            "Elapsed",
+            Some(HistorySort::Elapsed),
+            Constraint::Length(12),
+            0,
+        ),
+        (
+            "CPUTime",
+            Some(HistorySort::CpuTime),
+            Constraint::Length(14),
+            100,
+        ),
+        (
+            "MaxRSS",
+            Some(HistorySort::MaxRss),
+            Constraint::Length(10),
+            55,
+        ),
+        ("Exit", None, Constraint::Length(8), 0),
+    ];
+
+    let visible_cols: Vec<_> = col_specs
+        .iter()
+        .filter(|&&(_, _, _, min_w)| area.width >= min_w)
+        .collect();
+
+    let header_cells = visible_cols.iter().map(|&(label, sort_key, _, _)| {
+        if let Some(col) = sort_key {
+            Cell::from(hdr(label, *col))
+        } else {
+            Cell::from(label.to_string())
+        }
+    });
+
+    let header = Row::new(header_cells).style(
         Style::default()
             .fg(colors::BLUE)
             .add_modifier(Modifier::BOLD),
@@ -117,40 +157,46 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 
             let rss_display = format_rss(&entry.max_rss);
 
-            Row::new(vec![
-                Cell::from(Span::styled(
-                    entry.job_id.as_str(),
-                    Style::default().fg(colors::FG),
-                )),
-                Cell::from(Span::styled(
-                    entry.job_name.as_str(),
-                    Style::default().fg(colors::FG),
-                )),
-                Cell::from(Span::styled(
-                    entry.partition.as_str(),
-                    Style::default().fg(colors::FG_DARK),
-                )),
-                Cell::from(Span::styled(
-                    state_indicator,
-                    Style::default().fg(state_color),
-                )),
-                Cell::from(Span::styled(
-                    entry.elapsed.as_str(),
-                    Style::default().fg(colors::CYAN),
-                )),
-                Cell::from(Span::styled(
-                    entry.cpu_time.as_str(),
-                    Style::default().fg(colors::DARK5),
-                )),
-                Cell::from(Span::styled(
-                    rss_display,
-                    Style::default().fg(colors::MAGENTA),
-                )),
-                Cell::from(Span::styled(
-                    entry.exit_code.as_str(),
-                    Style::default().fg(colors::FG_DARK),
-                )),
-            ])
+            let mut cells = Vec::with_capacity(visible_cols.len());
+            for &(label, _, _, _) in &visible_cols {
+                let cell = match *label {
+                    "Job ID" => Cell::from(Span::styled(
+                        entry.job_id.as_str(),
+                        Style::default().fg(colors::FG),
+                    )),
+                    "Name" => Cell::from(Span::styled(
+                        entry.job_name.as_str(),
+                        Style::default().fg(colors::FG),
+                    )),
+                    "Partition" => Cell::from(Span::styled(
+                        entry.partition.as_str(),
+                        Style::default().fg(colors::FG_DARK),
+                    )),
+                    "State" => Cell::from(Span::styled(
+                        state_indicator,
+                        Style::default().fg(state_color),
+                    )),
+                    "Elapsed" => Cell::from(Span::styled(
+                        entry.elapsed.as_str(),
+                        Style::default().fg(colors::CYAN),
+                    )),
+                    "CPUTime" => Cell::from(Span::styled(
+                        entry.cpu_time.as_str(),
+                        Style::default().fg(colors::DARK5),
+                    )),
+                    "MaxRSS" => Cell::from(Span::styled(
+                        rss_display.clone(),
+                        Style::default().fg(colors::MAGENTA),
+                    )),
+                    "Exit" => Cell::from(Span::styled(
+                        entry.exit_code.as_str(),
+                        Style::default().fg(colors::FG_DARK),
+                    )),
+                    _ => Cell::from(""),
+                };
+                cells.push(cell);
+            }
+            Row::new(cells)
         })
         .collect();
 
@@ -172,16 +218,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         );
         frame.render_widget(msg, table_area);
     } else {
-        let widths = [
-            Constraint::Length(10),
-            Constraint::Length(22),
-            Constraint::Length(14),
-            Constraint::Length(10),
-            Constraint::Length(12),
-            Constraint::Length(14),
-            Constraint::Length(10),
-            Constraint::Length(8),
-        ];
+        let widths: Vec<Constraint> = visible_cols
+            .iter()
+            .map(|&(_, _, width, _)| *width)
+            .collect();
 
         let table = Table::new(rows, widths)
             .header(header)

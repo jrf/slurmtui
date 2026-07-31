@@ -350,7 +350,7 @@ impl FilePicker {
                 scored.push((score, i));
             }
         }
-        scored.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        scored.sort_unstable_by_key(|b| std::cmp::Reverse(b.0));
         for (_, idx) in scored.into_iter().take(MATCH_LIMIT) {
             self.matches.push(MatchEntry {
                 path: self.all_files[idx].clone(),
@@ -932,15 +932,16 @@ impl App {
 
     pub fn tick(&mut self) {
         let mut log_should_reload = false;
-        if let Popup::LogView(ref v) = self.popup {
-            if v.follow && v.last_read.elapsed() >= LOG_FOLLOW_INTERVAL {
-                log_should_reload = true;
-            }
+        if let Popup::LogView(ref v) = self.popup
+            && v.follow
+            && v.last_read.elapsed() >= LOG_FOLLOW_INTERVAL
+        {
+            log_should_reload = true;
         }
-        if log_should_reload {
-            if let Popup::LogView(ref mut v) = self.popup {
-                v.reload();
-            }
+        if log_should_reload
+            && let Popup::LogView(ref mut v) = self.popup
+        {
+            v.reload();
         }
         if self.last_input.elapsed() >= IDLE_THRESHOLD {
             return;
@@ -1092,10 +1093,10 @@ impl App {
     }
 
     pub fn status_text(&self) -> Option<&str> {
-        if let Some((ref msg, when)) = self.status_message {
-            if when.elapsed() < Duration::from_secs(5) {
-                return Some(msg);
-            }
+        if let Some((ref msg, when)) = self.status_message
+            && when.elapsed() < Duration::from_secs(5)
+        {
+            return Some(msg);
         }
         None
     }
@@ -1993,5 +1994,40 @@ impl App {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cmp::Ordering;
+
+    #[test]
+    fn slurm_time_parsing() {
+        assert_eq!(parse_slurm_time("1-00:00:00"), Some(86400));
+        assert_eq!(parse_slurm_time("01:00:00"), Some(3600));
+        assert_eq!(parse_slurm_time("02:30"), Some(150));
+        assert_eq!(parse_slurm_time("45"), Some(45));
+        assert_eq!(parse_slurm_time("UNLIMITED"), None);
+        assert_eq!(parse_slurm_time(""), None);
+    }
+
+    #[test]
+    fn memory_parsing_normalizes_to_mb() {
+        assert_eq!(parse_memory("1024M"), Some(1024));
+        assert_eq!(parse_memory("1G"), Some(1024));
+        assert_eq!(parse_memory("2GB"), Some(2048));
+        assert_eq!(parse_memory("1T"), Some(1024 * 1024));
+        assert_eq!(parse_memory("2048K"), Some(2));
+        assert_eq!(parse_memory("500"), Some(500));
+        assert_eq!(parse_memory(""), None);
+    }
+
+    #[test]
+    fn job_id_orders_numerically() {
+        assert_eq!(cmp_job_id("10", "9"), Ordering::Greater);
+        assert_eq!(cmp_job_id("2", "10"), Ordering::Less);
+        assert_eq!(cmp_job_id("100", "100"), Ordering::Equal);
+        assert_eq!(cmp_job_id("10_3", "10_1"), Ordering::Equal);
     }
 }

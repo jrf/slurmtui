@@ -189,43 +189,127 @@ impl SubmitForm {
     }
 
     pub fn to_command_string(&self) -> String {
-        let partition = self.partition.trim_end_matches('*');
         let mut parts = vec!["sbatch".to_string()];
-        if !self.job_name.is_empty() {
-            parts.push(format!("--job-name={}", self.job_name));
-        }
-        if !partition.is_empty() {
-            parts.push(format!("--partition={}", partition));
-        }
-        if !self.nodes.is_empty() {
-            parts.push(format!("--nodes={}", self.nodes));
-        }
-        if !self.cpus.is_empty() {
-            parts.push(format!("--cpus-per-task={}", self.cpus));
-        }
-        if !self.memory.is_empty() {
-            parts.push(format!("--mem={}", self.memory));
-        }
-        if !self.time_limit.is_empty() {
-            parts.push(format!("--time={}", self.time_limit));
-        }
-        if !self.gpu_count.is_empty() && self.gpu_count != "0" {
-            parts.push(format!("--gres=gpu:{}", self.gpu_count));
-        }
-        if !self.output_file.is_empty() {
-            parts.push(format!("--output={}", self.output_file));
-        }
-        if !self.error_file.is_empty() {
-            parts.push(format!("--error={}", self.error_file));
-        }
-        if !self.extra_args.is_empty() {
-            parts.push(self.extra_args.clone());
+        for arg in build_flag_args(self) {
+            parts.push(shell_quote(&arg));
         }
         if !self.script_path.is_empty() {
-            parts.push(self.script_path.clone());
+            parts.push(shell_quote(&self.script_path));
         }
         parts.join(" ")
     }
+}
+
+/// Build the `sbatch` flag arguments (everything except the leading `sbatch`
+/// and the trailing script path) from a form.
+///
+/// This is the single source of truth shared by the live command preview
+/// (`SubmitForm::to_command_string`) and the actual submission (`submit_job`),
+/// so the two can never drift apart.
+fn build_flag_args(form: &SubmitForm) -> Vec<String> {
+    let partition = form.partition.trim_end_matches('*');
+    let mut args: Vec<String> = Vec::new();
+    if !form.job_name.is_empty() {
+        args.push(format!("--job-name={}", form.job_name));
+    }
+    if !partition.is_empty() {
+        args.push(format!("--partition={}", partition));
+    }
+    if !form.nodes.is_empty() {
+        args.push(format!("--nodes={}", form.nodes));
+    }
+    if !form.cpus.is_empty() {
+        args.push(format!("--cpus-per-task={}", form.cpus));
+    }
+    if !form.memory.is_empty() {
+        args.push(format!("--mem={}", form.memory));
+    }
+    if !form.time_limit.is_empty() {
+        args.push(format!("--time={}", form.time_limit));
+    }
+    if !form.gpu_count.is_empty() && form.gpu_count != "0" {
+        args.push(format!("--gres=gpu:{}", form.gpu_count));
+    }
+    if !form.output_file.is_empty() {
+        args.push(format!("--output={}", form.output_file));
+    }
+    if !form.error_file.is_empty() {
+        args.push(format!("--error={}", form.error_file));
+    }
+    if !form.extra_args.is_empty() {
+        args.extend(tokenize_args(&form.extra_args));
+    }
+    args
+}
+
+/// Split a free-form extra-args string into individual argv tokens, honoring
+/// single quotes, double quotes and backslash escapes so that values
+/// containing spaces (e.g. `--comment="my job"`) survive as a single argument.
+fn tokenize_args(input: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut cur = String::new();
+    let mut has_token = false;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut chars = input.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if !in_single => {
+                if let Some(next) = chars.next() {
+                    cur.push(next);
+                    has_token = true;
+                }
+            }
+            '\'' if !in_double => {
+                in_single = !in_single;
+                has_token = true;
+            }
+            '"' if !in_single => {
+                in_double = !in_double;
+                has_token = true;
+            }
+            c if c.is_whitespace() && !in_single && !in_double => {
+                if has_token {
+                    tokens.push(std::mem::take(&mut cur));
+                    has_token = false;
+                }
+            }
+            c => {
+                cur.push(c);
+                has_token = true;
+            }
+        }
+    }
+    if has_token {
+        tokens.push(cur);
+    }
+    tokens
+}
+
+/// Quote a single argument for safe, copy-pasteable display in the command
+/// preview. Values containing shell-significant characters are wrapped in
+/// single quotes; simple values are left untouched.
+fn shell_quote(arg: &str) -> String {
+    if arg.is_empty() {
+        return "''".to_string();
+    }
+    let safe = arg
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "-_=/.:,+@%".contains(c));
+    if safe {
+        return arg.to_string();
+    }
+    let mut out = String::with_capacity(arg.len() + 2);
+    out.push('\'');
+    for c in arg.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
 }
 
 fn run_command(cmd: &str, args: &[&str]) -> Result<String, String> {
@@ -319,7 +403,7 @@ pub fn fetch_partitions() -> Result<Vec<PartitionInfo>, String> {
     let output = run_command(
         "sinfo",
         &[
-            "--format=%20P|%6a|%10l|%5D|%6t|%8c|%10m|%20G|%N",
+            "--format=%P|%a|%l|%D|%t|%c|%m|%G|%N",
             "--noheader",
         ],
     )?;
@@ -357,7 +441,7 @@ pub fn fetch_history(user: &str, start_time: &str) -> Result<Vec<HistoryEntry>, 
         &[
             "--parsable2",
             "--noheader",
-            "--format=JobID,JobName%30,Partition%15,State%12,Elapsed,CPUTime,MaxRSS,ExitCode",
+            "--format=JobID,JobName,Partition,State,Elapsed,CPUTime,MaxRSS,ExitCode",
             &user_flag,
             &start_flag,
         ],
@@ -542,43 +626,10 @@ pub fn cancel_job(job_id: &str) -> Result<(), String> {
 }
 
 pub fn submit_job(form: &SubmitForm) -> Result<String, String> {
-    let partition = form.partition.trim_end_matches('*');
-    let mut args: Vec<String> = Vec::new();
-    if !form.job_name.is_empty() {
-        args.push(format!("--job-name={}", form.job_name));
-    }
-    if !partition.is_empty() {
-        args.push(format!("--partition={}", partition));
-    }
-    if !form.nodes.is_empty() {
-        args.push(format!("--nodes={}", form.nodes));
-    }
-    if !form.cpus.is_empty() {
-        args.push(format!("--cpus-per-task={}", form.cpus));
-    }
-    if !form.memory.is_empty() {
-        args.push(format!("--mem={}", form.memory));
-    }
-    if !form.time_limit.is_empty() {
-        args.push(format!("--time={}", form.time_limit));
-    }
-    if !form.gpu_count.is_empty() && form.gpu_count != "0" {
-        args.push(format!("--gres=gpu:{}", form.gpu_count));
-    }
-    if !form.output_file.is_empty() {
-        args.push(format!("--output={}", form.output_file));
-    }
-    if !form.error_file.is_empty() {
-        args.push(format!("--error={}", form.error_file));
-    }
-    if !form.extra_args.is_empty() {
-        for arg in form.extra_args.split_whitespace() {
-            args.push(arg.to_string());
-        }
-    }
     if form.script_path.is_empty() {
         return Err("Script path is required".to_string());
     }
+    let mut args = build_flag_args(form);
     args.push(form.script_path.clone());
 
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -777,4 +828,98 @@ pub fn fetch_partition_names() -> Result<Vec<String>, String> {
     names.sort();
     names.dedup();
     Ok(names)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn gpus_per_node_variants() {
+        assert_eq!(parse_gpus_per_node("gres:gpu:h200:2"), 2);
+        assert_eq!(parse_gpus_per_node("gres:gpu:2"), 2);
+        assert_eq!(parse_gpus_per_node("gres/gpu:1"), 1);
+        assert_eq!(parse_gpus_per_node("gpu:4"), 4);
+        assert_eq!(parse_gpus_per_node("gres:gpu:1,gres:gpu:3"), 4);
+        assert_eq!(parse_gpus_per_node("gres:mps:100"), 0);
+        assert_eq!(parse_gpus_per_node("N/A"), 0);
+        assert_eq!(parse_gpus_per_node("(null)"), 0);
+        assert_eq!(parse_gpus_per_node(""), 0);
+    }
+
+    #[test]
+    fn tokenize_handles_quotes_and_escapes() {
+        assert_eq!(tokenize_args("--foo bar"), v(&["--foo", "bar"]));
+        assert_eq!(tokenize_args("--comment=\"my job\""), v(&["--comment=my job"]));
+        assert_eq!(tokenize_args("--a 'b c' --d"), v(&["--a", "b c", "--d"]));
+        assert_eq!(tokenize_args("a\\ b"), v(&["a b"]));
+        assert_eq!(tokenize_args("   "), v(&[]));
+        assert_eq!(tokenize_args(""), v(&[]));
+    }
+
+    #[test]
+    fn shell_quote_quotes_when_needed() {
+        assert_eq!(shell_quote("simple"), "simple");
+        assert_eq!(shell_quote("--mem=4G"), "--mem=4G");
+        assert_eq!(shell_quote("my job"), "'my job'");
+        assert_eq!(shell_quote(""), "''");
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn flag_args_and_preview_stay_in_sync() {
+        let mut form = SubmitForm::new();
+        form.job_name = "job1".to_string();
+        form.partition = "gpu*".to_string();
+        form.gpu_count = "2".to_string();
+        form.extra_args = "--comment=\"hello world\"".to_string();
+        form.script_path = "run.sh".to_string();
+
+        assert_eq!(
+            build_flag_args(&form),
+            v(&[
+                "--job-name=job1",
+                "--partition=gpu",
+                "--gres=gpu:2",
+                "--comment=hello world",
+            ])
+        );
+        assert_eq!(
+            form.to_command_string(),
+            "sbatch --job-name=job1 --partition=gpu --gres=gpu:2 '--comment=hello world' run.sh"
+        );
+    }
+
+    #[test]
+    fn gpu_count_zero_is_omitted() {
+        let mut form = SubmitForm::new();
+        form.gpu_count = "0".to_string();
+        form.script_path = "r.sh".to_string();
+        assert_eq!(form.to_command_string(), "sbatch r.sh");
+    }
+
+    #[test]
+    fn parse_job_line_ok_and_reject_short() {
+        let line = "12345|myjob|gpu|RUNNING|4|16G|01:00|1-00:00:00|node01|alice|1|gres:gpu:2";
+        let job = parse_job_line(line).expect("should parse");
+        assert_eq!(job.job_id, "12345");
+        assert_eq!(job.name, "myjob");
+        assert_eq!(job.cpus, 4);
+        assert_eq!(job.num_nodes, 1);
+        assert_eq!(job.gpus_per_node, 2);
+        assert!(parse_job_line("only|three|fields").is_none());
+    }
+
+    #[test]
+    fn parse_history_line_ok_and_reject_short() {
+        let line = "123|job|part|COMPLETED|00:10:00|00:40:00|1024K|0:0";
+        let e = parse_history_line(line).expect("should parse");
+        assert_eq!(e.job_id, "123");
+        assert_eq!(e.state, "COMPLETED");
+        assert!(parse_history_line("1|2|3").is_none());
+    }
 }

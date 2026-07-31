@@ -31,18 +31,43 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             label.to_string()
         }
     };
-    let header = Row::new(vec![
-        Cell::from(hdr("Partition", NodeSort::Partition)),
-        Cell::from(hdr("Avail", NodeSort::Avail)),
-        Cell::from(hdr("TimeLimit", NodeSort::TimeLimit)),
-        Cell::from(hdr("Nodes", NodeSort::Nodes)),
-        Cell::from(hdr("State", NodeSort::State)),
-        Cell::from(hdr("CPUs", NodeSort::Cpus)),
-        Cell::from(hdr("Mem(GB)", NodeSort::Memory)),
-        Cell::from("GRES"),
-        Cell::from("NodeList"),
-    ])
-    .style(
+
+    let col_specs = [
+        (
+            "Partition",
+            Some(NodeSort::Partition),
+            Constraint::Length(14),
+            0,
+        ),
+        ("Avail", Some(NodeSort::Avail), Constraint::Length(6), 0),
+        (
+            "TimeLimit",
+            Some(NodeSort::TimeLimit),
+            Constraint::Length(14),
+            70,
+        ),
+        ("Nodes", Some(NodeSort::Nodes), Constraint::Length(6), 0),
+        ("State", Some(NodeSort::State), Constraint::Length(6), 0),
+        ("CPUs", Some(NodeSort::Cpus), Constraint::Length(6), 85),
+        ("Mem(GB)", Some(NodeSort::Memory), Constraint::Length(8), 95),
+        ("GRES", None, Constraint::Length(18), 110),
+        ("NodeList", None, Constraint::Fill(1), 0),
+    ];
+
+    let visible_cols: Vec<_> = col_specs
+        .iter()
+        .filter(|&&(_, _, _, min_w)| area.width >= min_w)
+        .collect();
+
+    let header_cells = visible_cols.iter().map(|&(label, sort_key, _, _)| {
+        if let Some(col) = sort_key {
+            Cell::from(hdr(label, *col))
+        } else {
+            Cell::from(label.to_string())
+        }
+    });
+
+    let header = Row::new(header_cells).style(
         Style::default()
             .fg(colors::BLUE)
             .add_modifier(Modifier::BOLD),
@@ -78,38 +103,47 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 Style::default().fg(colors::FG)
             };
 
-            Row::new(vec![
-                Cell::from(Span::styled(p.partition.as_str(), partition_style)),
-                Cell::from(Span::styled(
-                    p.avail.as_str(),
-                    Style::default().fg(colors::FG_DARK),
-                )),
-                Cell::from(Span::styled(
-                    p.time_limit.as_str(),
-                    Style::default().fg(colors::DARK5),
-                )),
-                Cell::from(Span::styled(
-                    p.nodes.to_string(),
-                    Style::default().fg(colors::MAGENTA),
-                )),
-                Cell::from(Span::styled(
-                    p.state.as_str(),
-                    Style::default().fg(state_color),
-                )),
-                Cell::from(Span::styled(
-                    p.cpus_per_node.to_string(),
-                    Style::default().fg(colors::MAGENTA),
-                )),
-                Cell::from(Span::styled(mem_gb, Style::default().fg(colors::MAGENTA))),
-                Cell::from(Span::styled(
-                    gres_display,
-                    Style::default().fg(colors::CYAN),
-                )),
-                Cell::from(Span::styled(
-                    p.nodelist.as_str(),
-                    Style::default().fg(colors::FG_DARK),
-                )),
-            ])
+            let mut cells = Vec::with_capacity(visible_cols.len());
+            for &(label, _, _, _) in &visible_cols {
+                let cell = match *label {
+                    "Partition" => Cell::from(Span::styled(p.partition.as_str(), partition_style)),
+                    "Avail" => Cell::from(Span::styled(
+                        p.avail.as_str(),
+                        Style::default().fg(colors::FG_DARK),
+                    )),
+                    "TimeLimit" => Cell::from(Span::styled(
+                        p.time_limit.as_str(),
+                        Style::default().fg(colors::DARK5),
+                    )),
+                    "Nodes" => Cell::from(Span::styled(
+                        p.nodes.to_string(),
+                        Style::default().fg(colors::MAGENTA),
+                    )),
+                    "State" => Cell::from(Span::styled(
+                        p.state.as_str(),
+                        Style::default().fg(state_color),
+                    )),
+                    "CPUs" => Cell::from(Span::styled(
+                        p.cpus_per_node.to_string(),
+                        Style::default().fg(colors::MAGENTA),
+                    )),
+                    "Mem(GB)" => Cell::from(Span::styled(
+                        mem_gb.clone(),
+                        Style::default().fg(colors::MAGENTA),
+                    )),
+                    "GRES" => Cell::from(Span::styled(
+                        gres_display.clone(),
+                        Style::default().fg(colors::CYAN),
+                    )),
+                    "NodeList" => Cell::from(Span::styled(
+                        p.nodelist.as_str(),
+                        Style::default().fg(colors::FG_DARK),
+                    )),
+                    _ => Cell::from(""),
+                };
+                cells.push(cell);
+            }
+            Row::new(cells)
         })
         .collect();
 
@@ -129,17 +163,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         );
         frame.render_widget(msg, area);
     } else {
-        let widths = [
-            Constraint::Length(14),
-            Constraint::Length(6),
-            Constraint::Length(14),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(8),
-            Constraint::Length(22),
-            Constraint::Fill(1),
-        ];
+        let widths: Vec<Constraint> = visible_cols
+            .iter()
+            .map(|&(_, _, width, _)| *width)
+            .collect();
 
         let table = Table::new(rows, widths)
             .header(header)

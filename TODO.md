@@ -6,7 +6,6 @@
 
 ## Next
 
-- [ ] Column auto-sizing based on terminal width #improvement
 - [ ] Sorting by column (click header or keybinding) #feature
 - [ ] Config file for refresh interval, default partition, etc. #feature
 
@@ -19,6 +18,7 @@
 
 ## Done
 
+- [x] Column auto-sizing based on terminal width #improvement
 - [x] Core TUI skeleton with tab navigation #feature
 - [x] Jobs view with squeue, search, filter, state colors #feature
 - [x] Nodes view with sinfo partition table #feature

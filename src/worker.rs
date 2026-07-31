@@ -3,6 +3,7 @@ use std::thread;
 
 use crate::slurm::{self, HistoryEntry, Job, PartitionInfo};
 
+#[allow(clippy::enum_variant_names)]
 pub enum Request {
     FetchJobs { seq: u64, filter_user: Option<String> },
     FetchPartitions { seq: u64 },

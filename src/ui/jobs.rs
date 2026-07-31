@@ -79,20 +79,50 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             label.to_string()
         }
     };
-    let header = Row::new(vec![
-        Cell::from(hdr("Job ID", JobSort::JobId)),
-        Cell::from(hdr("Name", JobSort::Name)),
-        Cell::from(hdr("Partition", JobSort::Partition)),
-        Cell::from(hdr("State", JobSort::State)),
-        Cell::from(hdr("GPUs", JobSort::Gpus)),
-        Cell::from(hdr("CPUs", JobSort::Cpus)),
-        Cell::from(hdr("Memory", JobSort::Memory)),
-        Cell::from(hdr("Elapsed", JobSort::Elapsed)),
-        Cell::from(hdr("TimeLimit", JobSort::TimeLimit)),
-        Cell::from("Node/Reason"),
-        Cell::from(hdr("User", JobSort::User)),
-    ])
-    .style(
+
+    let col_specs = [
+        ("Job ID", Some(JobSort::JobId), Constraint::Length(10), 0),
+        ("Name", Some(JobSort::Name), Constraint::Fill(1), 70),
+        (
+            "Partition",
+            Some(JobSort::Partition),
+            Constraint::Length(12),
+            95,
+        ),
+        ("State", Some(JobSort::State), Constraint::Length(8), 0),
+        ("GPUs", Some(JobSort::Gpus), Constraint::Length(6), 115),
+        ("CPUs", Some(JobSort::Cpus), Constraint::Length(6), 90),
+        ("Memory", Some(JobSort::Memory), Constraint::Length(8), 110),
+        (
+            "Elapsed",
+            Some(JobSort::Elapsed),
+            Constraint::Length(10),
+            80,
+        ),
+        (
+            "TimeLimit",
+            Some(JobSort::TimeLimit),
+            Constraint::Length(10),
+            105,
+        ),
+        ("Node/Reason", None, Constraint::Fill(1), 0),
+        ("User", Some(JobSort::User), Constraint::Length(10), 55),
+    ];
+
+    let visible_cols: Vec<_> = col_specs
+        .iter()
+        .filter(|&&(_, _, _, min_w)| area.width >= min_w)
+        .collect();
+
+    let header_cells = visible_cols.iter().map(|&(label, sort_key, _, _)| {
+        if let Some(col) = sort_key {
+            Cell::from(hdr(label, *col))
+        } else {
+            Cell::from(label.to_string())
+        }
+    });
+
+    let header = Row::new(header_cells).style(
         Style::default()
             .fg(colors::BLUE)
             .add_modifier(Modifier::BOLD),
@@ -101,84 +131,92 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let rows: Vec<Row> = filtered
         .iter()
         .map(|job| {
-            let state_color = match job.state.as_str() {
-                "RUNNING" => colors::GREEN,
-                "PENDING" => colors::YELLOW,
-                "COMPLETING" => colors::BLUE1,
-                "COMPLETED" => colors::TEAL,
-                "FAILED" => colors::RED,
-                "CANCELLED" => colors::COMMENT,
-                "TIMEOUT" => colors::ORANGE,
-                _ => colors::FG,
-            };
-            let state_indicator = match job.state.as_str() {
-                "RUNNING" => "● RUN",
-                "PENDING" => "○ PD",
-                "COMPLETING" => "◑ CG",
-                "COMPLETED" => "✓ CD",
-                "FAILED" => "✗ F",
-                "CANCELLED" => "⊘ CA",
-                "TIMEOUT" => "⏰ TO",
-                _ => &job.state,
-            };
-
-            let total_gpus = job_total_gpus(job);
-            let gpu_text = if total_gpus == 0 {
-                "-".to_string()
-            } else if job.num_nodes > 1 {
-                format!("{} ({}/node)", total_gpus, job.gpus_per_node)
-            } else {
-                total_gpus.to_string()
-            };
-            let gpu_style = if total_gpus == 0 {
-                Style::default().fg(colors::DARK5)
-            } else {
-                Style::default().fg(colors::MAGENTA)
-            };
-
-            Row::new(vec![
-                Cell::from(Span::styled(
-                    job.job_id.as_str(),
-                    Style::default().fg(colors::FG),
-                )),
-                Cell::from(Span::styled(
-                    job.name.as_str(),
-                    Style::default().fg(colors::FG),
-                )),
-                Cell::from(Span::styled(
-                    job.partition.as_str(),
-                    Style::default().fg(colors::FG_DARK),
-                )),
-                Cell::from(Span::styled(
-                    state_indicator,
-                    Style::default().fg(state_color),
-                )),
-                Cell::from(Span::styled(gpu_text, gpu_style)),
-                Cell::from(Span::styled(
-                    job.cpus.to_string(),
-                    Style::default().fg(colors::MAGENTA),
-                )),
-                Cell::from(Span::styled(
-                    job.memory.as_str(),
-                    Style::default().fg(colors::MAGENTA),
-                )),
-                Cell::from(Span::styled(
-                    job.elapsed.as_str(),
-                    Style::default().fg(colors::CYAN),
-                )),
-                Cell::from(Span::styled(
-                    job.time_limit.as_str(),
-                    Style::default().fg(colors::DARK5),
-                )),
-                Cell::from(Span::styled(
-                    job.reason_or_nodelist.as_str(),
-                    Style::default().fg(colors::FG_DARK),
-                )),
-                Cell::from(Span::styled(
-                    job.user.as_str(),
-                    Style::default().fg(colors::FG_DARK),
-                )),
-            ])
+            let mut cells = Vec::with_capacity(visible_cols.len());
+            for &(label, _, _, _) in &visible_cols {
+                let cell = match *label {
+                    "Job ID" => Cell::from(Span::styled(
+                        job.job_id.as_str(),
+                        Style::default().fg(colors::FG),
+                    )),
+                    "Name" => Cell::from(Span::styled(
+                        job.name.as_str(),
+                        Style::default().fg(colors::FG),
+                    )),
+                    "Partition" => Cell::from(Span::styled(
+                        job.partition.as_str(),
+                        Style::default().fg(colors::FG_DARK),
+                    )),
+                    "State" => {
+                        let state_color = match job.state.as_str() {
+                            "RUNNING" => colors::GREEN,
+                            "PENDING" => colors::YELLOW,
+                            "COMPLETING" => colors::BLUE1,
+                            "COMPLETED" => colors::TEAL,
+                            "FAILED" => colors::RED,
+                            "CANCELLED" => colors::COMMENT,
+                            "TIMEOUT" => colors::ORANGE,
+                            _ => colors::FG,
+                        };
+                        let state_indicator = match job.state.as_str() {
+                            "RUNNING" => "● RUN",
+                            "PENDING" => "○ PD",
+                            "COMPLETING" => "◑ CG",
+                            "COMPLETED" => "✓ CD",
+                            "FAILED" => "✗ F",
+                            "CANCELLED" => "⊘ CA",
+                            "TIMEOUT" => "⏰ TO",
+                            _ => &job.state,
+                        };
+                        Cell::from(Span::styled(
+                            state_indicator,
+                            Style::default().fg(state_color),
+                        ))
+                    }
+                    "GPUs" => {
+                        let total_gpus = job_total_gpus(job);
+                        let gpu_text = if total_gpus == 0 {
+                            "-".to_string()
+                        } else if job.num_nodes > 1 {
+                            format!("{} ({}/node)", total_gpus, job.gpus_per_node)
+                        } else {
+                            total_gpus.to_string()
+                        };
+                        let gpu_style = if total_gpus == 0 {
+                            Style::default().fg(colors::DARK5)
+                        } else {
+                            Style::default().fg(colors::MAGENTA)
+                        };
+                        Cell::from(Span::styled(gpu_text, gpu_style))
+                    }
+                    "CPUs" => Cell::from(Span::styled(
+                        job.cpus.to_string(),
+                        Style::default().fg(colors::MAGENTA),
+                    )),
+                    "Memory" => Cell::from(Span::styled(
+                        job.memory.as_str(),
+                        Style::default().fg(colors::MAGENTA),
+                    )),
+                    "Elapsed" => Cell::from(Span::styled(
+                        job.elapsed.as_str(),
+                        Style::default().fg(colors::CYAN),
+                    )),
+                    "TimeLimit" => Cell::from(Span::styled(
+                        job.time_limit.as_str(),
+                        Style::default().fg(colors::DARK5),
+                    )),
+                    "Node/Reason" => Cell::from(Span::styled(
+                        job.reason_or_nodelist.as_str(),
+                        Style::default().fg(colors::FG_DARK),
+                    )),
+                    "User" => Cell::from(Span::styled(
+                        job.user.as_str(),
+                        Style::default().fg(colors::FG_DARK),
+                    )),
+                    _ => Cell::from(""),
+                };
+                cells.push(cell);
+            }
+            Row::new(cells)
         })
         .collect();
 
@@ -206,19 +244,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         );
         frame.render_widget(msg, table_area);
     } else {
-        let widths = [
-            Constraint::Length(12),
-            Constraint::Length(20),
-            Constraint::Length(12),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(14),
-            Constraint::Length(12),
-            Constraint::Length(12),
-            Constraint::Length(12),
-        ];
+        let widths: Vec<Constraint> = visible_cols
+            .iter()
+            .map(|&(_, _, width, _)| *width)
+            .collect();
 
         let table = Table::new(rows, widths)
             .header(header)
