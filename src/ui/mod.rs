@@ -5,11 +5,11 @@ mod popup;
 mod submit;
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs},
-    Frame,
 };
 
 use crate::app::{App, Popup, Tab};
@@ -55,6 +55,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Popup::LogView(view) => {
             popup::render_log_view(frame, frame.area(), view);
         }
+        Popup::ThemePicker(picker) => {
+            popup::render_theme_picker(frame, frame.area(), picker);
+        }
     }
 }
 
@@ -98,7 +101,7 @@ fn render_tab_bar(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
-    let spans = match app.active_tab {
+    let mut spans = match app.active_tab {
         Tab::Jobs => {
             if app.job_search_active {
                 vec![
@@ -224,6 +227,10 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             }
         }
     };
+
+    if !app.job_search_active && !app.history_search_active && !app.submit_form.editing {
+        spans.extend([desc_span("  "), key_span("t"), desc_span(":Theme")]);
+    }
 
     let paragraph = Paragraph::new(Line::from(spans));
     frame.render_widget(paragraph, area);

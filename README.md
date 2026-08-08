@@ -27,17 +27,20 @@ slurmtui
 
 ## Themes
 
-SlurmTUI uses `tokyo-night-moon` by default. To select another shared theme,
-set its name in `~/.config/slurmtui/config.toml`:
+SlurmTUI uses `tokyo-night-moon` by default. Press `t` to open the theme picker;
+moving through the list previews each theme, `Enter` keeps it for the current
+session, and `Esc` or `q` restores the previous theme. Picker changes never
+rewrite `config.toml`; set the startup theme directly in
+`~/.config/slurmtui/config.toml`:
 
 ```toml
-theme = "catppuccin-mocha"
+theme = "~/.config/themes/catppuccin-mocha.toml"
+theme_catalog = "~/.config/themes/catalog.toml"
 ```
 
-Themes are loaded from `~/.config/themes/<name>.toml`. An optional
-`~/.config/slurmtui/themes/<name>.toml` file is applied afterward for
-Slurm-specific overrides. The shared `[colors]` and `[ui]` sections work as-is;
-an app override can add a `[slurm]` section with `background`, `selection`,
+`theme` is loaded directly. `theme_catalog` contains an explicit `themes = [...]`
+array used by the picker. SlurmTUI never scans a theme directory. A theme can
+add a `[slurm]` section with `background`, `selection`,
 `text`, `text_dim`, `text_muted`, `hint`, `border`, `heading`, `completing`,
 `key`, `success`, `completed`, `pending`, `accent`, `warning`, `error`, or
 `metric` roles.
@@ -53,6 +56,7 @@ an app override can add a `[slurm]` section with `background`, `selection`,
 | `/` | Search/filter |
 | `f` | Toggle filter (My Jobs/All Jobs, time range) |
 | `r` | Manual refresh |
+| `t` | Open theme picker |
 | `Ctrl+s` | Submit job (Submit tab) |
 | `q` | Quit |
 

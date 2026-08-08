@@ -1,10 +1,18 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::RwLock;
 
 use ratatui::style::Color;
 
-static THEME: OnceLock<Theme> = OnceLock::new();
+const DEFAULT_THEME_NAME: &str = "tokyo-night-moon";
+
+static THEME: RwLock<Option<ActiveTheme>> = RwLock::new(None);
+
+#[derive(Clone)]
+struct ActiveTheme {
+    name: String,
+    colors: Theme,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Theme {
@@ -34,14 +42,68 @@ struct ThemeFile {
 }
 
 pub fn init() {
-    let theme = config_root()
+    let (name, theme) = config_root()
         .map(|root| load_configured_theme(&root))
-        .unwrap_or_else(fallback);
-    let _ = THEME.set(theme);
+        .unwrap_or_else(|| (DEFAULT_THEME_NAME.to_string(), fallback()));
+    set_active_theme(name, theme);
 }
 
-fn current() -> &'static Theme {
-    THEME.get_or_init(fallback)
+fn current() -> Theme {
+    THEME
+        .read()
+        .unwrap()
+        .as_ref()
+        .map(|active| active.colors)
+        .unwrap_or_else(fallback)
+}
+
+fn set_active_theme(name: String, theme: Theme) {
+    *THEME.write().unwrap() = Some(ActiveTheme {
+        name,
+        colors: theme,
+    });
+}
+
+pub fn current_theme_name() -> String {
+    THEME
+        .read()
+        .unwrap()
+        .as_ref()
+        .map(|active| active.name.clone())
+        .unwrap_or_else(|| DEFAULT_THEME_NAME.to_string())
+}
+
+pub fn available_theme_names() -> Vec<String> {
+    config_root()
+        .map(|root| {
+            load_all_themes(&root)
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub fn preview_theme(name: &str) -> bool {
+    if !valid_theme_name(name) {
+        return false;
+    }
+
+    let theme = config_root()
+        .and_then(|root| {
+            load_all_themes(&root)
+                .into_iter()
+                .find(|(theme_name, _)| theme_name == name)
+                .map(|(_, theme)| theme)
+        })
+        .or_else(|| (name == DEFAULT_THEME_NAME).then(fallback));
+
+    if let Some(theme) = theme {
+        set_active_theme(name.to_string(), theme);
+        true
+    } else {
+        false
+    }
 }
 
 pub fn bg_dark() -> Color {
@@ -115,32 +177,90 @@ fn config_root() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
 }
 
-fn load_configured_theme(root: &Path) -> Theme {
-    let name = read_config_theme(root).unwrap_or_else(|| "tokyo-night-moon".to_string());
-    if valid_theme_name(&name) {
-        load_named_theme(root, &name)
-    } else {
-        fallback()
+fn load_configured_theme(root: &Path) -> (String, Theme) {
+    let Some(configured_path) = read_config_value(root, "theme") else {
+        return (DEFAULT_THEME_NAME.to_string(), fallback());
+    };
+    let path = expand_home(root, &configured_path);
+    if let Ok(content) = std::fs::read_to_string(&path)
+        && let Some(theme) = parse_theme(&content, fallback())
+    {
+        return (theme_name(&path), theme);
     }
+    (DEFAULT_THEME_NAME.to_string(), fallback())
 }
 
+#[cfg(test)]
 fn load_named_theme(root: &Path, name: &str) -> Theme {
-    let mut theme = fallback();
-    let file_name = format!("{name}.toml");
-    let paths = [
-        root.join("themes").join(&file_name),
-        root.join("slurmtui").join("themes").join(file_name),
-    ];
+    load_all_themes(root)
+        .into_iter()
+        .find(|(theme_name, _)| theme_name == name)
+        .map(|(_, theme)| theme)
+        .unwrap_or_else(fallback)
+}
 
-    for path in paths {
-        if let Ok(content) = std::fs::read_to_string(path)
-            && let Some(parsed) = parse_theme(&content, theme)
-        {
-            theme = parsed;
+fn load_all_themes(root: &Path) -> Vec<(String, Theme)> {
+    let mut themes = Vec::new();
+    if let Some(catalog_path) = read_config_value(root, "theme_catalog") {
+        for path in load_catalog_paths(&expand_home(root, &catalog_path)) {
+            load_theme_entry(&mut themes, &path, root);
         }
     }
+    if let Some(selected_path) = read_config_value(root, "theme") {
+        load_theme_entry(&mut themes, &selected_path, root);
+    }
+    themes.sort_by(|(left, _), (right, _)| left.cmp(right));
+    themes
+}
 
-    theme
+fn load_catalog_paths(catalog_path: &Path) -> Vec<String> {
+    let Ok(contents) = std::fs::read_to_string(catalog_path) else {
+        return Vec::new();
+    };
+    let Ok(catalog) = contents.parse::<toml::Value>() else {
+        return Vec::new();
+    };
+    catalog
+        .get("themes")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_str)
+        .map(str::to_string)
+        .collect()
+}
+
+fn load_theme_entry(themes: &mut Vec<(String, Theme)>, configured_path: &str, root: &Path) {
+    let path = expand_home(root, configured_path);
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let Some(theme) = parse_theme(&content, fallback()) else {
+        return;
+    };
+    let name = theme_name(&path);
+    themes.retain(|(existing, _)| existing != &name);
+    themes.push((name, theme));
+}
+
+fn expand_home(root: &Path, configured_path: &str) -> PathBuf {
+    configured_path
+        .strip_prefix("~/")
+        .map(|rest| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .or_else(|| root.parent().map(Path::to_path_buf))
+                .unwrap_or_default()
+                .join(rest)
+        })
+        .unwrap_or_else(|| PathBuf::from(configured_path))
+}
+
+fn theme_name(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(DEFAULT_THEME_NAME)
+        .to_string()
 }
 
 fn valid_theme_name(name: &str) -> bool {
@@ -150,7 +270,7 @@ fn valid_theme_name(name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-fn read_config_theme(root: &Path) -> Option<String> {
+fn read_config_value(root: &Path, requested_key: &str) -> Option<String> {
     let content = std::fs::read_to_string(root.join("slurmtui").join("config.toml")).ok()?;
     for line in content.lines() {
         let line = line.trim();
@@ -158,7 +278,7 @@ fn read_config_theme(root: &Path) -> Option<String> {
             break;
         }
         if let Some((key, value)) = parse_kv(line)
-            && key == "theme"
+            && key == requested_key
             && !value.is_empty()
         {
             return Some(value.to_string());
@@ -392,24 +512,50 @@ mod tests {
     }
 
     #[test]
-    fn app_theme_overrides_shared_status_roles() {
+    fn catalog_loads_only_explicit_theme_paths() {
         let root = test_config_root();
-        std::fs::create_dir_all(root.join("themes")).unwrap();
-        std::fs::create_dir_all(root.join("slurmtui/themes")).unwrap();
+        let themes_dir = root.join("themes");
+        std::fs::create_dir_all(&themes_dir).unwrap();
+        std::fs::create_dir_all(root.join("slurmtui")).unwrap();
         std::fs::write(
-            root.join("themes/custom.toml"),
+            themes_dir.join("synthetic-theme.toml"),
             "[colors]\nblue = \"#112233\"\npurple = \"#445566\"\n",
         )
         .unwrap();
         std::fs::write(
-            root.join("slurmtui/themes/custom.toml"),
-            "[slurm]\npending = \"#abcdef\"\n",
+            themes_dir.join("unlisted.toml"),
+            "[colors]\nblue = \"#ffffff\"\n",
+        )
+        .unwrap();
+        let catalog = root.join("catalog.toml");
+        std::fs::write(
+            &catalog,
+            format!(
+                "themes = [\"{}\"]\n",
+                themes_dir.join("synthetic-theme.toml").display()
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("slurmtui/config.toml"),
+            format!(
+                "theme = \"{}\"\ntheme_catalog = \"{}\"\n",
+                themes_dir.join("synthetic-theme.toml").display(),
+                catalog.display()
+            ),
         )
         .unwrap();
 
-        let theme = load_named_theme(&root, "custom");
+        let theme = load_named_theme(&root, "synthetic-theme");
         assert_eq!(theme.blue, hex(0x11, 0x22, 0x33));
-        assert_eq!(theme.purple, hex(0xab, 0xcd, 0xef));
+        assert_eq!(theme.purple, hex(0x44, 0x55, 0x66));
+        assert_eq!(
+            load_all_themes(&root)
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>(),
+            ["synthetic-theme"]
+        );
 
         std::fs::remove_dir_all(root).unwrap();
     }

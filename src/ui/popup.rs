@@ -1,12 +1,12 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Row, Table, Wrap},
-    Frame,
 };
 
-use crate::app::{FilePicker, LogView};
+use crate::app::{FilePicker, LogView, ThemePicker};
 use crate::colors;
 use crate::slurm::JobDetail;
 
@@ -188,7 +188,12 @@ pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
     let lines: Vec<Line> = view
         .contents
         .lines()
-        .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(colors::fg()))))
+        .map(|l| {
+            Line::from(Span::styled(
+                l.to_string(),
+                Style::default().fg(colors::fg()),
+            ))
+        })
         .collect();
     let paragraph = Paragraph::new(lines)
         .scroll((view.scroll, 0))
@@ -232,6 +237,62 @@ pub fn render_file_picker(frame: &mut Frame, area: Rect, picker: &FilePicker) {
     } else {
         render_browse_mode(frame, inner, picker);
     }
+}
+
+pub fn render_theme_picker(frame: &mut Frame, area: Rect, picker: &ThemePicker) {
+    let desired_height = picker.names.len().saturating_add(2) as u16;
+    let height = desired_height.min(area.height.saturating_sub(4)).max(5);
+    let popup_area = small_centered_rect(48, height, area);
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(colors::blue()))
+        .title(Span::styled(
+            " Theme ",
+            Style::default()
+                .fg(colors::blue())
+                .add_modifier(Modifier::BOLD),
+        ))
+        .title_bottom(
+            Line::from(Span::styled(
+                " j/k:preview  enter:save  esc:cancel ",
+                Style::default().fg(colors::dark5()),
+            ))
+            .centered(),
+        )
+        .style(Style::default().fg(colors::fg()).bg(colors::bg_dark()));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let visible = inner.height as usize;
+    let start = if picker.selected >= visible {
+        picker.selected + 1 - visible
+    } else {
+        0
+    };
+    let end = (start + visible).min(picker.names.len());
+    let width = inner.width as usize;
+    let lines: Vec<Line> = picker.names[start..end]
+        .iter()
+        .enumerate()
+        .map(|(offset, name)| {
+            let selected = start + offset == picker.selected;
+            let marker = if selected { "› " } else { "  " };
+            let display = format!("{marker}{}", name.replace('-', " "));
+            let padded = format!("{display:<width$}");
+            let style = if selected {
+                Style::default()
+                    .fg(colors::purple())
+                    .bg(colors::bg_highlight())
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(colors::fg())
+            };
+            Line::from(Span::styled(padded, style))
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn render_browse_mode(frame: &mut Frame, inner: Rect, picker: &FilePicker) {

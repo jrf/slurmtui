@@ -6,6 +6,7 @@ use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::widgets::TableState;
 
+use crate::colors;
 use crate::slurm::{self, HistoryEntry, Job, JobDetail, LogKind, PartitionInfo, SubmitForm};
 use crate::worker::{Request, Response, Worker};
 
@@ -459,6 +460,54 @@ pub enum JobFilter {
     AllJobs,
 }
 
+pub struct ThemePicker {
+    pub names: Vec<String>,
+    pub selected: usize,
+    pub original: String,
+}
+
+impl ThemePicker {
+    fn new() -> Self {
+        Self::from_names(
+            colors::available_theme_names(),
+            colors::current_theme_name(),
+        )
+    }
+
+    fn from_names(names: Vec<String>, original: String) -> Self {
+        let selected = names.iter().position(|name| name == &original).unwrap_or(0);
+        Self {
+            names,
+            selected,
+            original,
+        }
+    }
+
+    fn selected_name(&self) -> Option<&str> {
+        self.names.get(self.selected).map(String::as_str)
+    }
+
+    fn move_down(&mut self) {
+        if !self.names.is_empty() {
+            self.selected = (self.selected + 1) % self.names.len();
+        }
+    }
+
+    fn move_up(&mut self) {
+        if !self.names.is_empty() {
+            self.selected = (self.selected + self.names.len() - 1) % self.names.len();
+        }
+    }
+
+    fn jump_top(&mut self) {
+        self.selected = 0;
+    }
+
+    fn jump_bottom(&mut self) {
+        self.selected = self.names.len().saturating_sub(1);
+    }
+}
+
 pub enum Popup {
     None,
     JobDetail(JobDetail),
@@ -467,6 +516,7 @@ pub enum Popup {
     SubmitResult { success: bool, message: String },
     FilePicker(FilePicker),
     LogView(LogView),
+    ThemePicker(ThemePicker),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -924,9 +974,7 @@ impl App {
         {
             log_should_reload = true;
         }
-        if log_should_reload
-            && let Popup::LogView(ref mut v) = self.popup
-        {
+        if log_should_reload && let Popup::LogView(ref mut v) = self.popup {
             v.reload();
         }
         if self.last_input.elapsed() >= IDLE_THRESHOLD {
@@ -1207,6 +1255,10 @@ impl App {
                 self.refresh_active_tab_force();
                 return;
             }
+            KeyCode::Char('t') if key.modifiers.is_empty() => {
+                self.popup = Popup::ThemePicker(ThemePicker::new());
+                return;
+            }
             _ => {}
         }
 
@@ -1476,7 +1528,62 @@ impl App {
                     }
                 }
             }
+            Popup::ThemePicker(_) => match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    let original = match &self.popup {
+                        Popup::ThemePicker(picker) => Some(picker.original.clone()),
+                        _ => None,
+                    };
+                    if let Some(original) = original {
+                        colors::preview_theme(&original);
+                    }
+                    self.popup = Popup::None;
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if let Popup::ThemePicker(ref mut picker) = self.popup {
+                        picker.move_down();
+                    }
+                    self.preview_selected_theme();
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if let Popup::ThemePicker(ref mut picker) = self.popup {
+                        picker.move_up();
+                    }
+                    self.preview_selected_theme();
+                }
+                KeyCode::Char('g') | KeyCode::Home => {
+                    if let Popup::ThemePicker(ref mut picker) = self.popup {
+                        picker.jump_top();
+                    }
+                    self.preview_selected_theme();
+                }
+                KeyCode::Char('G') | KeyCode::End => {
+                    if let Popup::ThemePicker(ref mut picker) = self.popup {
+                        picker.jump_bottom();
+                    }
+                    self.preview_selected_theme();
+                }
+                KeyCode::Enter => {
+                    let selected = match &self.popup {
+                        Popup::ThemePicker(picker) => picker.selected_name().map(str::to_string),
+                        _ => None,
+                    };
+                    if let Some(name) = selected {
+                        self.popup = Popup::None;
+                        self.set_status(format!("Theme: {name} (session only)"));
+                    }
+                }
+                _ => {}
+            },
             Popup::None => {}
+        }
+    }
+
+    fn preview_selected_theme(&self) {
+        if let Popup::ThemePicker(picker) = &self.popup
+            && let Some(name) = picker.selected_name()
+        {
+            colors::preview_theme(name);
         }
     }
 
@@ -2015,5 +2122,20 @@ mod tests {
         assert_eq!(cmp_job_id("2", "10"), Ordering::Less);
         assert_eq!(cmp_job_id("100", "100"), Ordering::Equal);
         assert_eq!(cmp_job_id("10_3", "10_1"), Ordering::Equal);
+    }
+
+    #[test]
+    fn theme_picker_tracks_current_theme_and_wraps() {
+        let mut picker = ThemePicker::from_names(
+            vec!["catppuccin-mocha".into(), "tokyo-night-moon".into()],
+            "tokyo-night-moon".into(),
+        );
+
+        assert_eq!(picker.selected, 1);
+        picker.move_down();
+        assert_eq!(picker.selected, 0);
+        picker.move_up();
+        assert_eq!(picker.selected, 1);
+        assert_eq!(picker.selected_name(), Some("tokyo-night-moon"));
     }
 }
