@@ -71,26 +71,26 @@ fn render_tab_bar(frame: &mut Frame, area: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::FG_GUTTER))
+                .border_style(Style::default().fg(colors::fg_gutter()))
                 .title(Span::styled(
                     " slurmtui ",
                     Style::default()
-                        .fg(colors::BLUE)
+                        .fg(colors::blue())
                         .add_modifier(Modifier::BOLD),
                 ))
                 .title_bottom(
                     Line::from(Span::styled(
                         format!(" {} ", right_text),
-                        Style::default().fg(colors::DARK5),
+                        Style::default().fg(colors::dark5()),
                     ))
                     .right_aligned(),
                 ),
         )
         .select(app.active_tab.index())
-        .style(Style::default().fg(colors::DARK5))
+        .style(Style::default().fg(colors::dark5()))
         .highlight_style(
             Style::default()
-                .fg(colors::BLUE)
+                .fg(colors::blue())
                 .add_modifier(Modifier::BOLD),
         );
 
@@ -233,11 +233,11 @@ fn key_span(text: &str) -> Span<'_> {
     Span::styled(
         text,
         Style::default()
-            .fg(colors::PURPLE)
+            .fg(colors::purple())
             .add_modifier(Modifier::BOLD),
     )
 }
 
 fn desc_span(text: &str) -> Span<'_> {
-    Span::styled(text, Style::default().fg(colors::DARK5))
+    Span::styled(text, Style::default().fg(colors::dark5()))
 }

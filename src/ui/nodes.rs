@@ -69,7 +69,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let header = Row::new(header_cells).style(
         Style::default()
-            .fg(colors::BLUE)
+            .fg(colors::blue())
             .add_modifier(Modifier::BOLD),
     );
 
@@ -77,12 +77,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .iter()
         .map(|p| {
             let state_color = match p.state.as_str() {
-                "idle" => colors::GREEN,
-                "mix" => colors::PURPLE,
-                "alloc" | "allocated" => colors::BLUE1,
-                "down" | "down*" => colors::RED,
-                "drain" | "drng" => colors::COMMENT,
-                _ => colors::FG,
+                "idle" => colors::green(),
+                "mix" => colors::purple(),
+                "alloc" | "allocated" => colors::blue1(),
+                "down" | "down*" => colors::red(),
+                "drain" | "drng" => colors::comment(),
+                _ => colors::fg(),
             };
 
             let mem_gb = if p.memory_mb > 0 {
@@ -98,9 +98,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             };
 
             let partition_style = if p.partition.ends_with('*') {
-                Style::default().fg(colors::FG).add_modifier(Modifier::BOLD)
+                Style::default().fg(colors::fg()).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(colors::FG)
+                Style::default().fg(colors::fg())
             };
 
             let mut cells = Vec::with_capacity(visible_cols.len());
@@ -109,15 +109,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                     "Partition" => Cell::from(Span::styled(p.partition.as_str(), partition_style)),
                     "Avail" => Cell::from(Span::styled(
                         p.avail.as_str(),
-                        Style::default().fg(colors::FG_DARK),
+                        Style::default().fg(colors::fg_dark()),
                     )),
                     "TimeLimit" => Cell::from(Span::styled(
                         p.time_limit.as_str(),
-                        Style::default().fg(colors::DARK5),
+                        Style::default().fg(colors::dark5()),
                     )),
                     "Nodes" => Cell::from(Span::styled(
                         p.nodes.to_string(),
-                        Style::default().fg(colors::MAGENTA),
+                        Style::default().fg(colors::magenta()),
                     )),
                     "State" => Cell::from(Span::styled(
                         p.state.as_str(),
@@ -125,19 +125,19 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                     )),
                     "CPUs" => Cell::from(Span::styled(
                         p.cpus_per_node.to_string(),
-                        Style::default().fg(colors::MAGENTA),
+                        Style::default().fg(colors::magenta()),
                     )),
                     "Mem(GB)" => Cell::from(Span::styled(
                         mem_gb.clone(),
-                        Style::default().fg(colors::MAGENTA),
+                        Style::default().fg(colors::magenta()),
                     )),
                     "GRES" => Cell::from(Span::styled(
                         gres_display.clone(),
-                        Style::default().fg(colors::CYAN),
+                        Style::default().fg(colors::cyan()),
                     )),
                     "NodeList" => Cell::from(Span::styled(
                         p.nodelist.as_str(),
-                        Style::default().fg(colors::FG_DARK),
+                        Style::default().fg(colors::fg_dark()),
                     )),
                     _ => Cell::from(""),
                 };
@@ -151,15 +151,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         let msg = Paragraph::new(
             Line::from(Span::styled(
                 "No partition data",
-                Style::default().fg(colors::COMMENT),
+                Style::default().fg(colors::comment()),
             ))
             .centered(),
         )
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::FG_GUTTER))
-                .title(Span::styled(title, Style::default().fg(colors::BLUE))),
+                .border_style(Style::default().fg(colors::fg_gutter()))
+                .title(Span::styled(title, Style::default().fg(colors::blue()))),
         );
         frame.render_widget(msg, area);
     } else {
@@ -173,12 +173,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(colors::FG_GUTTER))
-                    .title(Span::styled(title, Style::default().fg(colors::BLUE))),
+                    .border_style(Style::default().fg(colors::fg_gutter()))
+                    .title(Span::styled(title, Style::default().fg(colors::blue()))),
             )
             .row_highlight_style(
                 Style::default()
-                    .bg(colors::BG_HIGHLIGHT)
+                    .bg(colors::bg_highlight())
                     .add_modifier(Modifier::BOLD),
             );
 

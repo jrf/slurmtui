@@ -25,6 +25,23 @@ just install
 slurmtui
 ```
 
+## Themes
+
+SlurmTUI uses `tokyo-night-moon` by default. To select another shared theme,
+set its name in `~/.config/slurmtui/config.toml`:
+
+```toml
+theme = "catppuccin-mocha"
+```
+
+Themes are loaded from `~/.config/themes/<name>.toml`. An optional
+`~/.config/slurmtui/themes/<name>.toml` file is applied afterward for
+Slurm-specific overrides. The shared `[colors]` and `[ui]` sections work as-is;
+an app override can add a `[slurm]` section with `background`, `selection`,
+`text`, `text_dim`, `text_muted`, `hint`, `border`, `heading`, `completing`,
+`key`, `success`, `completed`, `pending`, `accent`, `warning`, `error`, or
+`metric` roles.
+
 ## Key Bindings
 
 | Key | Action |

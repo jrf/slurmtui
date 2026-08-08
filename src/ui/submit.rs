@@ -20,10 +20,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 fn render_form(frame: &mut Frame, area: Rect, form: &SubmitForm) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(colors::FG_GUTTER))
+        .border_style(Style::default().fg(colors::fg_gutter()))
         .title(Span::styled(
             " Submit Job ",
-            Style::default().fg(colors::BLUE),
+            Style::default().fg(colors::blue()),
         ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -53,10 +53,10 @@ fn render_form(frame: &mut Frame, area: Rect, form: &SubmitForm) {
 
         let label_style = if is_active {
             Style::default()
-                .fg(colors::PURPLE)
+                .fg(colors::purple())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(colors::DARK5)
+            Style::default().fg(colors::dark5())
         };
 
         let label_widget = Paragraph::new(format!("{}:", label)).style(label_style);
@@ -77,11 +77,11 @@ fn render_form(frame: &mut Frame, area: Rect, form: &SubmitForm) {
         };
 
         let value_style = if is_editing {
-            Style::default().fg(colors::FG).bg(colors::BG_HIGHLIGHT)
+            Style::default().fg(colors::fg()).bg(colors::bg_highlight())
         } else if is_active {
-            Style::default().fg(colors::FG)
+            Style::default().fg(colors::fg())
         } else {
-            Style::default().fg(colors::FG_DARK)
+            Style::default().fg(colors::fg_dark())
         };
 
         let value_widget = Paragraph::new(value_display).style(value_style);
@@ -101,13 +101,13 @@ fn render_preview(frame: &mut Frame, area: Rect, form: &SubmitForm) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::FG_GUTTER))
+                .border_style(Style::default().fg(colors::fg_gutter()))
                 .title(Span::styled(
                     " Command Preview ",
-                    Style::default().fg(colors::BLUE),
+                    Style::default().fg(colors::blue()),
                 )),
         )
         .wrap(Wrap { trim: false })
-        .style(Style::default().fg(colors::TEAL));
+        .style(Style::default().fg(colors::teal()));
     frame.render_widget(preview, area);
 }

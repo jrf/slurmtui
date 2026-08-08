@@ -20,15 +20,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     if show_search {
         let search_text = format!("/{}", app.job_search);
         let cursor_style = if app.job_search_active {
-            Style::default().fg(colors::PURPLE)
+            Style::default().fg(colors::purple())
         } else {
-            Style::default().fg(colors::COMMENT)
+            Style::default().fg(colors::comment())
         };
         let search = Paragraph::new(search_text).style(cursor_style).block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::FG_GUTTER))
-                .title(Span::styled(" Search ", Style::default().fg(colors::BLUE))),
+                .border_style(Style::default().fg(colors::fg_gutter()))
+                .title(Span::styled(" Search ", Style::default().fg(colors::blue()))),
         );
         frame.render_widget(search, chunks[0]);
 
@@ -124,7 +124,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let header = Row::new(header_cells).style(
         Style::default()
-            .fg(colors::BLUE)
+            .fg(colors::blue())
             .add_modifier(Modifier::BOLD),
     );
 
@@ -136,26 +136,26 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 let cell = match *label {
                     "Job ID" => Cell::from(Span::styled(
                         job.job_id.as_str(),
-                        Style::default().fg(colors::FG),
+                        Style::default().fg(colors::fg()),
                     )),
                     "Name" => Cell::from(Span::styled(
                         job.name.as_str(),
-                        Style::default().fg(colors::FG),
+                        Style::default().fg(colors::fg()),
                     )),
                     "Partition" => Cell::from(Span::styled(
                         job.partition.as_str(),
-                        Style::default().fg(colors::FG_DARK),
+                        Style::default().fg(colors::fg_dark()),
                     )),
                     "State" => {
                         let state_color = match job.state.as_str() {
-                            "RUNNING" => colors::GREEN,
-                            "PENDING" => colors::PURPLE,
-                            "COMPLETING" => colors::BLUE1,
-                            "COMPLETED" => colors::TEAL,
-                            "FAILED" => colors::RED,
-                            "CANCELLED" => colors::COMMENT,
-                            "TIMEOUT" => colors::ORANGE,
-                            _ => colors::FG,
+                            "RUNNING" => colors::green(),
+                            "PENDING" => colors::purple(),
+                            "COMPLETING" => colors::blue1(),
+                            "COMPLETED" => colors::teal(),
+                            "FAILED" => colors::red(),
+                            "CANCELLED" => colors::comment(),
+                            "TIMEOUT" => colors::orange(),
+                            _ => colors::fg(),
                         };
                         let state_indicator = match job.state.as_str() {
                             "RUNNING" => "● RUN",
@@ -182,35 +182,35 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                             total_gpus.to_string()
                         };
                         let gpu_style = if total_gpus == 0 {
-                            Style::default().fg(colors::DARK5)
+                            Style::default().fg(colors::dark5())
                         } else {
-                            Style::default().fg(colors::MAGENTA)
+                            Style::default().fg(colors::magenta())
                         };
                         Cell::from(Span::styled(gpu_text, gpu_style))
                     }
                     "CPUs" => Cell::from(Span::styled(
                         job.cpus.to_string(),
-                        Style::default().fg(colors::MAGENTA),
+                        Style::default().fg(colors::magenta()),
                     )),
                     "Memory" => Cell::from(Span::styled(
                         job.memory.as_str(),
-                        Style::default().fg(colors::MAGENTA),
+                        Style::default().fg(colors::magenta()),
                     )),
                     "Elapsed" => Cell::from(Span::styled(
                         job.elapsed.as_str(),
-                        Style::default().fg(colors::CYAN),
+                        Style::default().fg(colors::cyan()),
                     )),
                     "TimeLimit" => Cell::from(Span::styled(
                         job.time_limit.as_str(),
-                        Style::default().fg(colors::DARK5),
+                        Style::default().fg(colors::dark5()),
                     )),
                     "Node/Reason" => Cell::from(Span::styled(
                         job.reason_or_nodelist.as_str(),
-                        Style::default().fg(colors::FG_DARK),
+                        Style::default().fg(colors::fg_dark()),
                     )),
                     "User" => Cell::from(Span::styled(
                         job.user.as_str(),
-                        Style::default().fg(colors::FG_DARK),
+                        Style::default().fg(colors::fg_dark()),
                     )),
                     _ => Cell::from(""),
                 };
@@ -232,15 +232,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         let msg = Paragraph::new(
             Line::from(Span::styled(
                 empty_msg,
-                Style::default().fg(colors::COMMENT),
+                Style::default().fg(colors::comment()),
             ))
             .centered(),
         )
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::FG_GUTTER))
-                .title(Span::styled(title, Style::default().fg(colors::BLUE))),
+                .border_style(Style::default().fg(colors::fg_gutter()))
+                .title(Span::styled(title, Style::default().fg(colors::blue()))),
         );
         frame.render_widget(msg, table_area);
     } else {
@@ -254,12 +254,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(colors::FG_GUTTER))
-                    .title(Span::styled(title, Style::default().fg(colors::BLUE))),
+                    .border_style(Style::default().fg(colors::fg_gutter()))
+                    .title(Span::styled(title, Style::default().fg(colors::blue()))),
             )
             .row_highlight_style(
                 Style::default()
-                    .bg(colors::BG_HIGHLIGHT)
+                    .bg(colors::bg_highlight())
                     .add_modifier(Modifier::BOLD),
             );
 

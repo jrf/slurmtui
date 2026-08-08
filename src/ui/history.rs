@@ -20,15 +20,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     if show_search {
         let search_text = format!("/{}", app.history_search);
         let cursor_style = if app.history_search_active {
-            Style::default().fg(colors::PURPLE)
+            Style::default().fg(colors::purple())
         } else {
-            Style::default().fg(colors::COMMENT)
+            Style::default().fg(colors::comment())
         };
         let search = Paragraph::new(search_text).style(cursor_style).block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::FG_GUTTER))
-                .title(Span::styled(" Search ", Style::default().fg(colors::BLUE))),
+                .border_style(Style::default().fg(colors::fg_gutter()))
+                .title(Span::styled(" Search ", Style::default().fg(colors::blue()))),
         );
         frame.render_widget(search, chunks[0]);
 
@@ -129,7 +129,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let header = Row::new(header_cells).style(
         Style::default()
-            .fg(colors::BLUE)
+            .fg(colors::blue())
             .add_modifier(Modifier::BOLD),
     );
 
@@ -137,13 +137,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .iter()
         .map(|entry| {
             let state_color = match entry.state.as_str() {
-                "COMPLETED" => colors::GREEN,
-                "FAILED" => colors::RED,
-                "CANCELLED" | "CANCELLED+" => colors::COMMENT,
-                "TIMEOUT" => colors::ORANGE,
-                "RUNNING" => colors::TEAL,
-                "PENDING" => colors::PURPLE,
-                _ => colors::FG,
+                "COMPLETED" => colors::green(),
+                "FAILED" => colors::red(),
+                "CANCELLED" | "CANCELLED+" => colors::comment(),
+                "TIMEOUT" => colors::orange(),
+                "RUNNING" => colors::teal(),
+                "PENDING" => colors::purple(),
+                _ => colors::fg(),
             };
             let state_indicator = match entry.state.as_str() {
                 "COMPLETED" => "✓ COMP",
@@ -162,15 +162,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 let cell = match *label {
                     "Job ID" => Cell::from(Span::styled(
                         entry.job_id.as_str(),
-                        Style::default().fg(colors::FG),
+                        Style::default().fg(colors::fg()),
                     )),
                     "Name" => Cell::from(Span::styled(
                         entry.job_name.as_str(),
-                        Style::default().fg(colors::FG),
+                        Style::default().fg(colors::fg()),
                     )),
                     "Partition" => Cell::from(Span::styled(
                         entry.partition.as_str(),
-                        Style::default().fg(colors::FG_DARK),
+                        Style::default().fg(colors::fg_dark()),
                     )),
                     "State" => Cell::from(Span::styled(
                         state_indicator,
@@ -178,19 +178,19 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                     )),
                     "Elapsed" => Cell::from(Span::styled(
                         entry.elapsed.as_str(),
-                        Style::default().fg(colors::CYAN),
+                        Style::default().fg(colors::cyan()),
                     )),
                     "CPUTime" => Cell::from(Span::styled(
                         entry.cpu_time.as_str(),
-                        Style::default().fg(colors::DARK5),
+                        Style::default().fg(colors::dark5()),
                     )),
                     "MaxRSS" => Cell::from(Span::styled(
                         rss_display.clone(),
-                        Style::default().fg(colors::MAGENTA),
+                        Style::default().fg(colors::magenta()),
                     )),
                     "Exit" => Cell::from(Span::styled(
                         entry.exit_code.as_str(),
-                        Style::default().fg(colors::FG_DARK),
+                        Style::default().fg(colors::fg_dark()),
                     )),
                     _ => Cell::from(""),
                 };
@@ -206,15 +206,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         let msg = Paragraph::new(
             Line::from(Span::styled(
                 "No history entries",
-                Style::default().fg(colors::COMMENT),
+                Style::default().fg(colors::comment()),
             ))
             .centered(),
         )
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::FG_GUTTER))
-                .title(Span::styled(title, Style::default().fg(colors::BLUE))),
+                .border_style(Style::default().fg(colors::fg_gutter()))
+                .title(Span::styled(title, Style::default().fg(colors::blue()))),
         );
         frame.render_widget(msg, table_area);
     } else {
@@ -228,12 +228,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(colors::FG_GUTTER))
-                    .title(Span::styled(title, Style::default().fg(colors::BLUE))),
+                    .border_style(Style::default().fg(colors::fg_gutter()))
+                    .title(Span::styled(title, Style::default().fg(colors::blue()))),
             )
             .row_highlight_style(
                 Style::default()
-                    .bg(colors::BG_HIGHLIGHT)
+                    .bg(colors::bg_highlight())
                     .add_modifier(Modifier::BOLD),
             );
 

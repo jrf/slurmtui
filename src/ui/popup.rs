@@ -54,14 +54,14 @@ pub fn render_job_detail(frame: &mut Frame, area: Rect, detail: &JobDetail, scro
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(colors::BLUE))
+        .border_style(Style::default().fg(colors::blue()))
         .title(Span::styled(
             " Job Detail (q:close, j/k:scroll, g/G:top/bot) ",
             Style::default()
-                .fg(colors::BLUE)
+                .fg(colors::blue())
                 .add_modifier(Modifier::BOLD),
         ))
-        .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
+        .style(Style::default().fg(colors::fg()).bg(colors::bg_dark()));
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
@@ -76,10 +76,10 @@ pub fn render_job_detail(frame: &mut Frame, area: Rect, detail: &JobDetail, scro
                 Span::styled(
                     key.as_str(),
                     Style::default()
-                        .fg(colors::PURPLE)
+                        .fg(colors::purple())
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(value.as_str(), Style::default().fg(colors::FG)),
+                Span::styled(value.as_str(), Style::default().fg(colors::fg())),
             ])
         })
         .collect();
@@ -96,35 +96,35 @@ pub fn render_confirm(frame: &mut Frame, area: Rect, message: &str) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(colors::PURPLE))
+        .border_style(Style::default().fg(colors::purple()))
         .title(Span::styled(
             " Confirm ",
             Style::default()
-                .fg(colors::PURPLE)
+                .fg(colors::purple())
                 .add_modifier(Modifier::BOLD),
         ))
-        .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
+        .style(Style::default().fg(colors::fg()).bg(colors::bg_dark()));
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
     let text = vec![
-        Line::from(Span::styled(message, Style::default().fg(colors::FG))),
+        Line::from(Span::styled(message, Style::default().fg(colors::fg()))),
         Line::from(""),
         Line::from(vec![
             Span::styled(
                 "y",
                 Style::default()
-                    .fg(colors::GREEN)
+                    .fg(colors::green())
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(":yes  ", Style::default().fg(colors::DARK5)),
+            Span::styled(":yes  ", Style::default().fg(colors::dark5())),
             Span::styled(
                 "n",
                 Style::default()
-                    .fg(colors::RED)
+                    .fg(colors::red())
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(":no", Style::default().fg(colors::DARK5)),
+            Span::styled(":no", Style::default().fg(colors::dark5())),
         ]),
     ];
 
@@ -152,24 +152,24 @@ pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
     let hints = " f:toggle  r:reload  t:switch  j/k:scroll  g/G:top/bot  q:close ";
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(colors::BLUE))
+        .border_style(Style::default().fg(colors::blue()))
         .title(Span::styled(
             title,
             Style::default()
-                .fg(colors::BLUE)
+                .fg(colors::blue())
                 .add_modifier(Modifier::BOLD),
         ))
         .title_bottom(
-            Line::from(Span::styled(hints, Style::default().fg(colors::DARK5))).right_aligned(),
+            Line::from(Span::styled(hints, Style::default().fg(colors::dark5()))).right_aligned(),
         )
-        .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
+        .style(Style::default().fg(colors::fg()).bg(colors::bg_dark()));
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
     if let Some(err) = &view.error {
         let msg = Paragraph::new(Line::from(Span::styled(
             err.as_str(),
-            Style::default().fg(colors::RED),
+            Style::default().fg(colors::red()),
         )))
         .wrap(Wrap { trim: false });
         frame.render_widget(msg, inner);
@@ -179,7 +179,7 @@ pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
     if view.contents.is_empty() {
         let msg = Paragraph::new(Line::from(Span::styled(
             "<empty>",
-            Style::default().fg(colors::DARK5),
+            Style::default().fg(colors::dark5()),
         )));
         frame.render_widget(msg, inner);
         return;
@@ -188,7 +188,7 @@ pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
     let lines: Vec<Line> = view
         .contents
         .lines()
-        .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(colors::FG))))
+        .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(colors::fg()))))
         .collect();
     let paragraph = Paragraph::new(lines)
         .scroll((view.scroll, 0))
@@ -216,14 +216,14 @@ pub fn render_file_picker(frame: &mut Frame, area: Rect, picker: &FilePicker) {
     };
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(colors::BLUE))
+        .border_style(Style::default().fg(colors::blue()))
         .title(Span::styled(
             title,
             Style::default()
-                .fg(colors::BLUE)
+                .fg(colors::blue())
                 .add_modifier(Modifier::BOLD),
         ))
-        .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
+        .style(Style::default().fg(colors::fg()).bg(colors::bg_dark()));
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
@@ -238,7 +238,7 @@ fn render_browse_mode(frame: &mut Frame, inner: Rect, picker: &FilePicker) {
     if picker.entries.is_empty() {
         let empty = Paragraph::new(Line::from(Span::styled(
             "<no matching entries — press `a` to show all files>",
-            Style::default().fg(colors::DARK5),
+            Style::default().fg(colors::dark5()),
         )));
         frame.render_widget(empty, inner);
         return;
@@ -265,13 +265,13 @@ fn render_browse_mode(frame: &mut Frame, inner: Rect, picker: &FilePicker) {
             };
             let style = if global_i == picker.selected {
                 Style::default()
-                    .fg(colors::FG)
-                    .bg(colors::BG_HIGHLIGHT)
+                    .fg(colors::fg())
+                    .bg(colors::bg_highlight())
                     .add_modifier(Modifier::BOLD)
             } else if ent.is_dir {
-                Style::default().fg(colors::BLUE)
+                Style::default().fg(colors::blue())
             } else {
-                Style::default().fg(colors::FG)
+                Style::default().fg(colors::fg())
             };
             Line::from(Span::styled(display, style))
         })
@@ -290,18 +290,18 @@ fn render_query_mode(frame: &mut Frame, inner: Rect, picker: &FilePicker) {
         Span::styled(
             "> ",
             Style::default()
-                .fg(colors::PURPLE)
+                .fg(colors::purple())
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(picker.query.as_str(), Style::default().fg(colors::FG)),
-        Span::styled("▌", Style::default().fg(colors::FG)),
+        Span::styled(picker.query.as_str(), Style::default().fg(colors::fg())),
+        Span::styled("▌", Style::default().fg(colors::fg())),
     ]);
     frame.render_widget(Paragraph::new(prompt), input_area);
 
     if picker.query.is_empty() {
         let hint = Paragraph::new(Line::from(Span::styled(
             "<type to fuzzy-find files under this directory>",
-            Style::default().fg(colors::DARK5),
+            Style::default().fg(colors::dark5()),
         )));
         frame.render_widget(hint, list_area);
         return;
@@ -310,7 +310,7 @@ fn render_query_mode(frame: &mut Frame, inner: Rect, picker: &FilePicker) {
     if picker.matches.is_empty() {
         let empty = Paragraph::new(Line::from(Span::styled(
             "<no matches>",
-            Style::default().fg(colors::DARK5),
+            Style::default().fg(colors::dark5()),
         )));
         frame.render_widget(empty, list_area);
         return;
@@ -332,11 +332,11 @@ fn render_query_mode(frame: &mut Frame, inner: Rect, picker: &FilePicker) {
             let global_i = start + i;
             let style = if global_i == picker.selected {
                 Style::default()
-                    .fg(colors::FG)
-                    .bg(colors::BG_HIGHLIGHT)
+                    .fg(colors::fg())
+                    .bg(colors::bg_highlight())
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(colors::FG)
+                Style::default().fg(colors::fg())
             };
             Line::from(Span::styled(m.display.as_str(), style))
         })
@@ -353,9 +353,9 @@ pub fn render_result(frame: &mut Frame, area: Rect, success: bool, message: &str
     frame.render_widget(Clear, popup_area);
 
     let (title, color) = if success {
-        (" Success ", colors::GREEN)
+        (" Success ", colors::green())
     } else {
-        (" Error ", colors::RED)
+        (" Error ", colors::red())
     };
 
     let block = Block::default()
@@ -365,16 +365,16 @@ pub fn render_result(frame: &mut Frame, area: Rect, success: bool, message: &str
             title,
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         ))
-        .style(Style::default().fg(colors::FG).bg(colors::BG_DARK));
+        .style(Style::default().fg(colors::fg()).bg(colors::bg_dark()));
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
     let text = vec![
-        Line::from(Span::styled(message, Style::default().fg(colors::FG))),
+        Line::from(Span::styled(message, Style::default().fg(colors::fg()))),
         Line::from(""),
         Line::from(Span::styled(
             "Press Enter or q to close",
-            Style::default().fg(colors::DARK5),
+            Style::default().fg(colors::dark5()),
         )),
     ];
 
