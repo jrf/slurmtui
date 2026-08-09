@@ -1,5 +1,6 @@
 mod app;
 mod colors;
+mod config;
 mod event;
 mod slurm;
 mod ui;
@@ -20,6 +21,8 @@ use event::{AppEvent, poll_event};
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 fn main() -> io::Result<()> {
+    let config = config::load();
+    slurm::set_command_timeout(config.command_timeout);
     colors::init();
 
     let original_hook = std::panic::take_hook();
@@ -34,7 +37,7 @@ fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new();
+    let mut app = App::new(config);
 
     loop {
         terminal.draw(|frame| ui::draw(frame, &mut app))?;

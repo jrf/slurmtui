@@ -2,11 +2,20 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
 const COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(10);
+static COMMAND_TIMEOUT_SECONDS: AtomicU64 = AtomicU64::new(15);
+
+pub fn set_command_timeout(timeout: Duration) {
+    COMMAND_TIMEOUT_SECONDS.store(timeout.as_secs().max(1), Ordering::Relaxed);
+}
+
+fn command_timeout() -> Duration {
+    Duration::from_secs(COMMAND_TIMEOUT_SECONDS.load(Ordering::Relaxed))
+}
 
 pub struct Job {
     pub job_id: String,
@@ -320,7 +329,7 @@ fn shell_quote(arg: &str) -> String {
 }
 
 fn run_command(cmd: &str, args: &[&str]) -> Result<String, String> {
-    run_command_with_timeout(cmd, args, COMMAND_TIMEOUT)
+    run_command_with_timeout(cmd, args, command_timeout())
 }
 
 fn run_command_with_timeout(cmd: &str, args: &[&str], timeout: Duration) -> Result<String, String> {

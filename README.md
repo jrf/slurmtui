@@ -8,7 +8,7 @@ A terminal UI for managing Slurm HPC cluster jobs, built with Rust.
 - **Nodes** — View partition and node status across the cluster
 - **Submit** — Build and submit jobs with a form interface and live command preview
 - **History** — Browse completed job history with time-range filtering
-- **Responsive operations** — Run Slurm commands outside the UI thread with a 15-second timeout
+- **Responsive operations** — Run Slurm commands outside the UI thread with a configurable timeout
 
 ## Install
 
@@ -24,6 +24,23 @@ just install
 
 ```bash
 slurmtui
+```
+
+## Configuration
+
+All settings are optional and load from `~/.config/slurmtui/config.toml`.
+Durations are positive whole seconds; invalid values fall back individually.
+
+```toml
+jobs_refresh_seconds = 10
+nodes_refresh_seconds = 30
+idle_pause_seconds = 120
+log_follow_seconds = 2
+command_timeout_seconds = 15
+
+default_partition = "gpu"
+default_job_filter = "mine"       # "mine" or "all"
+default_history_range = "week"    # "today", "week", or "month"
 ```
 
 ## Themes

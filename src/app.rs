@@ -7,6 +7,7 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::widgets::TableState;
 
 use crate::colors;
+use crate::config::{Config as AppConfig, HistoryRangeSetting, JobFilterSetting};
 use crate::slurm::{
     self, HistoryEntry, Job, JobDetail, LogKind, LogTail, PartitionInfo, SubmitForm,
 };
@@ -17,8 +18,6 @@ const MATCH_LIMIT: usize = 500;
 const DEFAULT_VIEWPORT: u16 = 10;
 const LOG_TAIL_LINES: usize = 500;
 const LOG_TAIL_BYTES: u64 = 256 * 1024;
-const LOG_FOLLOW_INTERVAL: Duration = Duration::from_secs(2);
-const IDLE_THRESHOLD: Duration = Duration::from_secs(120);
 
 pub struct LogView {
     pub job_id: String,
@@ -834,16 +833,22 @@ impl HistoryRange {
     pub fn start_date(self) -> String {
         use std::process::Command;
         let days = match self {
-            HistoryRange::Today => "0",
-            HistoryRange::Week => "7",
-            HistoryRange::Month => "30",
+            HistoryRange::Today => 0,
+            HistoryRange::Week => 7,
+            HistoryRange::Month => 30,
         };
-        let output = Command::new("date")
-            .args(["-d", &format!("{} days ago", days), "+%Y-%m-%d"])
-            .output();
+        let output = Command::new("date").args(history_date_args(days)).output();
         match output {
-            Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+            Ok(output) if output.status.success() => {
+                let date = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if date.is_empty() {
+                    "2000-01-01".to_string()
+                } else {
+                    date
+                }
+            }
             Err(_) => "2000-01-01".to_string(),
+            _ => "2000-01-01".to_string(),
         }
     }
 
@@ -853,6 +858,18 @@ impl HistoryRange {
             HistoryRange::Week => HistoryRange::Month,
             HistoryRange::Month => HistoryRange::Today,
         }
+    }
+}
+
+fn history_date_args(days: u8) -> Vec<String> {
+    if cfg!(target_os = "macos") {
+        vec![format!("-v-{days}d"), "+%Y-%m-%d".to_string()]
+    } else {
+        vec![
+            "-d".to_string(),
+            format!("{days} days ago"),
+            "+%Y-%m-%d".to_string(),
+        ]
     }
 }
 
@@ -885,6 +902,8 @@ pub struct App {
     pub last_input: Instant,
     pub jobs_refresh_interval: Duration,
     pub partitions_refresh_interval: Duration,
+    pub idle_pause_interval: Duration,
+    pub log_follow_interval: Duration,
     pub username: String,
 
     pub worker: Worker,
@@ -913,8 +932,12 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(config: AppConfig) -> Self {
         let username = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
+        let mut submit_form = SubmitForm::new();
+        if let Some(partition) = &config.default_partition {
+            submit_form.partition = partition.clone();
+        }
         let mut app = Self {
             active_tab: Tab::Jobs,
             should_quit: false,
@@ -924,26 +947,35 @@ impl App {
 
             jobs: Vec::new(),
             jobs_table_state: TableState::default(),
-            job_filter: JobFilter::MyJobs,
+            job_filter: match config.default_job_filter {
+                JobFilterSetting::Mine => JobFilter::MyJobs,
+                JobFilterSetting::All => JobFilter::AllJobs,
+            },
             job_search: String::new(),
             job_search_active: false,
 
             partitions: Vec::new(),
             nodes_table_state: TableState::default(),
 
-            submit_form: SubmitForm::new(),
+            submit_form,
 
             history: Vec::new(),
             history_table_state: TableState::default(),
-            history_range: HistoryRange::Week,
+            history_range: match config.default_history_range {
+                HistoryRangeSetting::Today => HistoryRange::Today,
+                HistoryRangeSetting::Week => HistoryRange::Week,
+                HistoryRangeSetting::Month => HistoryRange::Month,
+            },
             history_search: String::new(),
             history_search_active: false,
 
             jobs_last_refresh: Instant::now(),
             partitions_last_refresh: Instant::now(),
             last_input: Instant::now(),
-            jobs_refresh_interval: Duration::from_secs(10),
-            partitions_refresh_interval: Duration::from_secs(30),
+            jobs_refresh_interval: config.jobs_refresh_interval,
+            partitions_refresh_interval: config.nodes_refresh_interval,
+            idle_pause_interval: config.idle_pause_interval,
+            log_follow_interval: config.log_follow_interval,
             username,
 
             worker: Worker::spawn(),
@@ -978,7 +1010,7 @@ impl App {
         let log_should_reload = if let Popup::LogView(ref v) = self.popup
             && v.follow
             && !self.log_in_flight
-            && v.last_read.elapsed() >= LOG_FOLLOW_INTERVAL
+            && v.last_read.elapsed() >= self.log_follow_interval
         {
             true
         } else {
@@ -987,7 +1019,7 @@ impl App {
         if log_should_reload {
             self.refresh_log_view();
         }
-        if self.last_input.elapsed() >= IDLE_THRESHOLD {
+        if self.last_input.elapsed() >= self.idle_pause_interval {
             return;
         }
         if self.active_tab == Tab::Jobs
@@ -2250,5 +2282,17 @@ mod tests {
         picker.move_up();
         assert_eq!(picker.selected, 1);
         assert_eq!(picker.selected_name(), Some("tokyo-night-moon"));
+    }
+
+    #[test]
+    fn history_date_uses_platform_arguments() {
+        #[cfg(target_os = "macos")]
+        assert_eq!(history_date_args(7), vec!["-v-7d", "+%Y-%m-%d"]);
+
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(
+            history_date_args(7),
+            vec!["-d", "7 days ago", "+%Y-%m-%d"]
+        );
     }
 }

@@ -6,7 +6,7 @@
 
 ## Next
 
-- [ ] Config file for refresh interval, default partition, etc. #feature
+- [ ] Focused job diagnostics for resources, pending reasons, dependencies, and logs #feature
 
 ## Later
 
@@ -31,5 +31,6 @@
 - [x] Sorting by column and direction #feature
 - [x] Log file viewer with stdout/stderr switching and follow mode #feature
 - [x] Non-blocking Slurm actions with bounded command execution #improvement
+- [x] Runtime config for refresh, idle pause, defaults, log follow, and command timeout #feature
 
 ## Scrapped
