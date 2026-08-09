@@ -8,6 +8,7 @@ A terminal UI for managing Slurm HPC cluster jobs, built with Rust.
 - **Nodes** — View partition and node status across the cluster
 - **Submit** — Build and submit jobs with a form interface and live command preview
 - **History** — Browse completed job history with time-range filtering
+- **Responsive operations** — Run Slurm commands outside the UI thread with a 15-second timeout
 
 ## Install
 

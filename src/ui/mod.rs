@@ -49,6 +49,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Popup::SubmitResult { success, message } => {
             popup::render_result(frame, frame.area(), *success, message);
         }
+        Popup::Working { message } => {
+            popup::render_working(frame, frame.area(), message);
+        }
         Popup::FilePicker(picker) => {
             popup::render_file_picker(frame, frame.area(), picker);
         }

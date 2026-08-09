@@ -6,12 +6,10 @@
 
 ## Next
 
-- [ ] Sorting by column (click header or keybinding) #feature
 - [ ] Config file for refresh interval, default partition, etc. #feature
 
 ## Later
 
-- [ ] Log file viewer (tail stdout/stderr from job detail) #feature
 - [ ] Job dependency visualization #feature
 - [ ] Job templates / saved submit forms #feature
 - [ ] Mouse support for tab/row selection #improvement
@@ -30,5 +28,8 @@
 - [x] GPU usage column in Jobs view (total + per-node for multi-node) #feature
 - [x] Async slurm calls via worker thread (non-blocking tab switches) #improvement
 - [x] Per-source refresh intervals (jobs 10s, nodes 30s, history manual) + idle pause #improvement
+- [x] Sorting by column and direction #feature
+- [x] Log file viewer with stdout/stderr switching and follow mode #feature
+- [x] Non-blocking Slurm actions with bounded command execution #improvement
 
 ## Scrapped

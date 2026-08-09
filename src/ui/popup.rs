@@ -132,6 +132,29 @@ pub fn render_confirm(frame: &mut Frame, area: Rect, message: &str) {
     frame.render_widget(paragraph, inner);
 }
 
+pub fn render_working(frame: &mut Frame, area: Rect, message: &str) {
+    let width = (message.chars().count() as u16 + 6)
+        .max(30)
+        .min(area.width.saturating_sub(4));
+    let popup_area = small_centered_rect(width, 3, area);
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(colors::blue()))
+        .style(Style::default().fg(colors::fg()).bg(colors::bg_dark()));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            message,
+            Style::default().fg(colors::fg()),
+        )))
+        .centered(),
+        inner,
+    );
+}
+
 pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
     let popup_area = centered_rect(85, 85, area);
     frame.render_widget(Clear, popup_area);
@@ -172,6 +195,15 @@ pub fn render_log_view(frame: &mut Frame, area: Rect, view: &LogView) {
             Style::default().fg(colors::red()),
         )))
         .wrap(Wrap { trim: false });
+        frame.render_widget(msg, inner);
+        return;
+    }
+
+    if view.loading && view.contents.is_empty() {
+        let msg = Paragraph::new(Line::from(Span::styled(
+            "<loading…>",
+            Style::default().fg(colors::dark5()),
+        )));
         frame.render_widget(msg, inner);
         return;
     }

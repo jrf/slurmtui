@@ -1,6 +1,12 @@
 use std::fs;
-use std::path::Path;
-use std::process::Command;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
+const COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 pub struct Job {
     pub job_id: String,
@@ -44,6 +50,7 @@ pub struct JobDetail {
     pub fields: Vec<(String, String)>,
 }
 
+#[derive(Clone)]
 pub struct SubmitForm {
     pub job_name: String,
     pub script_path: String,
@@ -313,17 +320,83 @@ fn shell_quote(arg: &str) -> String {
 }
 
 fn run_command(cmd: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(cmd)
+    run_command_with_timeout(cmd, args, COMMAND_TIMEOUT)
+}
+
+fn run_command_with_timeout(cmd: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
+    let mut child = Command::new(cmd)
         .args(args)
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("Failed to run {}: {}", cmd, e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("Failed to capture {} stdout", cmd))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| format!("Failed to capture {} stderr", cmd))?;
+    let stdout_reader = thread::spawn(move || read_all(stdout));
+    let stderr_reader = thread::spawn(move || read_all(stderr));
+    let started = Instant::now();
+
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = join_reader(stdout_reader, cmd, "stdout");
+                let _ = join_reader(stderr_reader, cmd, "stderr");
+                return Err(format!(
+                    "{} timed out after {} seconds",
+                    cmd,
+                    timeout.as_secs_f64()
+                ));
+            }
+            Ok(None) => {
+                thread::sleep(COMMAND_POLL_INTERVAL.min(timeout.saturating_sub(started.elapsed())))
+            }
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = join_reader(stdout_reader, cmd, "stdout");
+                let _ = join_reader(stderr_reader, cmd, "stderr");
+                return Err(format!("Failed waiting for {}: {}", cmd, e));
+            }
+        }
+    };
+
+    let stdout = join_reader(stdout_reader, cmd, "stdout")?;
+    let stderr = join_reader(stderr_reader, cmd, "stderr")?;
+
+    if !status.success() {
+        let stderr = String::from_utf8_lossy(&stderr);
         return Err(format!("{} failed: {}", cmd, stderr.trim()));
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(String::from_utf8_lossy(&stdout).to_string())
+}
+
+fn read_all(mut pipe: impl Read) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    pipe.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn join_reader(
+    reader: thread::JoinHandle<std::io::Result<Vec<u8>>>,
+    cmd: &str,
+    stream: &str,
+) -> Result<Vec<u8>, String> {
+    reader
+        .join()
+        .map_err(|_| format!("Failed reading {} {}", cmd, stream))?
+        .map_err(|e| format!("Failed reading {} {}: {}", cmd, stream, e))
 }
 
 pub fn fetch_jobs(filter_user: Option<&str>) -> Result<Vec<Job>, String> {
@@ -496,6 +569,11 @@ pub enum LogKind {
     StdErr,
 }
 
+pub struct LogTail {
+    pub path: String,
+    pub contents: String,
+}
+
 impl LogKind {
     pub fn label(self) -> &'static str {
         match self {
@@ -572,6 +650,17 @@ pub fn read_log_tail(path: &Path, max_lines: usize, max_bytes: u64) -> Result<St
     let cleaned: Vec<String> = trimmed.lines().map(clean_log_line).collect();
     let start_idx = cleaned.len().saturating_sub(max_lines);
     Ok(cleaned[start_idx..].join("\n"))
+}
+
+pub fn fetch_log_tail(
+    job_id: &str,
+    kind: LogKind,
+    max_lines: usize,
+    max_bytes: u64,
+) -> Result<LogTail, String> {
+    let path = fetch_log_path(job_id, kind)?;
+    let contents = read_log_tail(&PathBuf::from(&path), max_lines, max_bytes)?;
+    Ok(LogTail { path, contents })
 }
 
 fn clean_log_line(line: &str) -> String {
@@ -868,6 +957,21 @@ mod tests {
         assert_eq!(shell_quote("my job"), "'my job'");
         assert_eq!(shell_quote(""), "''");
         assert_eq!(shell_quote("it's"), "'it'\\''s'");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn command_timeout_stops_hung_process() {
+        let started = Instant::now();
+        let error = run_command_with_timeout(
+            "sh",
+            &["-c", "while :; do :; done"],
+            Duration::from_millis(50),
+        )
+        .expect_err("command should time out");
+
+        assert!(error.contains("timed out"));
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

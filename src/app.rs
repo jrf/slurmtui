@@ -7,7 +7,9 @@ use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::widgets::TableState;
 
 use crate::colors;
-use crate::slurm::{self, HistoryEntry, Job, JobDetail, LogKind, PartitionInfo, SubmitForm};
+use crate::slurm::{
+    self, HistoryEntry, Job, JobDetail, LogKind, LogTail, PartitionInfo, SubmitForm,
+};
 use crate::worker::{Request, Response, Worker};
 
 const WALK_CAP: usize = 10_000;
@@ -26,12 +28,13 @@ pub struct LogView {
     pub scroll: u16,
     pub follow: bool,
     pub last_read: Instant,
+    pub loading: bool,
     pub error: Option<String>,
 }
 
 impl LogView {
     fn new(job_id: String, kind: LogKind) -> Self {
-        let mut v = Self {
+        Self {
             job_id,
             kind,
             path: String::new(),
@@ -39,38 +42,30 @@ impl LogView {
             scroll: 0,
             follow: true,
             last_read: Instant::now(),
+            loading: false,
             error: None,
-        };
-        v.reload();
-        v
+        }
     }
 
-    pub fn reload(&mut self) {
+    fn begin_load(&mut self) {
         self.last_read = Instant::now();
-        let path = match slurm::fetch_log_path(&self.job_id, self.kind) {
-            Ok(p) => p,
-            Err(e) => {
-                self.error = Some(e);
-                self.path.clear();
-                self.contents.clear();
-                return;
-            }
-        };
-        self.path = path.clone();
-        let p = std::path::Path::new(&path);
-        match slurm::read_log_tail(p, LOG_TAIL_LINES, LOG_TAIL_BYTES) {
-            Ok(text) => {
-                self.contents = text;
-                self.error = None;
-            }
-            Err(e) => {
-                self.contents.clear();
-                self.error = Some(e);
-            }
-        }
+        self.loading = true;
+        self.error = None;
+    }
+
+    fn apply_tail(&mut self, tail: LogTail) {
+        self.path = tail.path;
+        self.contents = tail.contents;
+        self.loading = false;
+        self.error = None;
         if self.follow {
             self.scroll_bottom();
         }
+    }
+
+    fn apply_error(&mut self, error: String) {
+        self.loading = false;
+        self.error = Some(error);
     }
 
     pub fn line_count(&self) -> usize {
@@ -97,7 +92,9 @@ impl LogView {
         self.kind = self.kind.flip();
         self.scroll = 0;
         self.follow = true;
-        self.reload();
+        self.path.clear();
+        self.contents.clear();
+        self.error = None;
     }
 }
 
@@ -514,6 +511,7 @@ pub enum Popup {
     ConfirmCancel { job_id: String },
     SubmitConfirm,
     SubmitResult { success: bool, message: String },
+    Working { message: String },
     FilePicker(FilePicker),
     LogView(LogView),
     ThemePicker(ThemePicker),
@@ -894,9 +892,14 @@ pub struct App {
     pub partitions_seq: u64,
     pub history_seq: u64,
     pub partition_names_seq: u64,
+    pub job_detail_seq: u64,
+    pub log_seq: u64,
+    pub cancel_seq: u64,
+    pub submit_seq: u64,
     pub jobs_in_flight: bool,
     pub partitions_in_flight: bool,
     pub history_in_flight: bool,
+    pub log_in_flight: bool,
 
     pub status_message: Option<(String, Instant)>,
 
@@ -948,9 +951,14 @@ impl App {
             partitions_seq: 0,
             history_seq: 0,
             partition_names_seq: 0,
+            job_detail_seq: 0,
+            log_seq: 0,
+            cancel_seq: 0,
+            submit_seq: 0,
             jobs_in_flight: false,
             partitions_in_flight: false,
             history_in_flight: false,
+            log_in_flight: false,
 
             status_message: None,
 
@@ -967,15 +975,17 @@ impl App {
     }
 
     pub fn tick(&mut self) {
-        let mut log_should_reload = false;
-        if let Popup::LogView(ref v) = self.popup
+        let log_should_reload = if let Popup::LogView(ref v) = self.popup
             && v.follow
+            && !self.log_in_flight
             && v.last_read.elapsed() >= LOG_FOLLOW_INTERVAL
         {
-            log_should_reload = true;
-        }
-        if log_should_reload && let Popup::LogView(ref mut v) = self.popup {
-            v.reload();
+            true
+        } else {
+            false
+        };
+        if log_should_reload {
+            self.refresh_log_view();
         }
         if self.last_input.elapsed() >= IDLE_THRESHOLD {
             return;
@@ -1069,6 +1079,39 @@ impl App {
         });
     }
 
+    fn request_job_detail(&mut self, job_id: String) {
+        self.job_detail_seq = self.job_detail_seq.wrapping_add(1);
+        self.worker.send(Request::FetchJobDetail {
+            seq: self.job_detail_seq,
+            job_id: job_id.clone(),
+        });
+        self.popup = Popup::Working {
+            message: format!("Loading job {job_id}…"),
+        };
+    }
+
+    fn refresh_log_view(&mut self) {
+        if self.log_in_flight {
+            return;
+        }
+        let (job_id, kind) = match &self.popup {
+            Popup::LogView(view) => (view.job_id.clone(), view.kind),
+            _ => return,
+        };
+        self.log_seq = self.log_seq.wrapping_add(1);
+        self.log_in_flight = true;
+        if let Popup::LogView(view) = &mut self.popup {
+            view.begin_load();
+        }
+        self.worker.send(Request::FetchLog {
+            seq: self.log_seq,
+            job_id,
+            kind,
+            max_lines: LOG_TAIL_LINES,
+            max_bytes: LOG_TAIL_BYTES,
+        });
+    }
+
     pub fn poll_worker(&mut self) {
         while let Some(resp) = self.worker.try_recv() {
             match resp {
@@ -1116,6 +1159,92 @@ impl App {
                     }
                     if let Ok(names) = result {
                         self.submit_form.available_partitions = names;
+                    }
+                }
+                Response::JobDetail { seq, result } => {
+                    if seq != self.job_detail_seq {
+                        continue;
+                    }
+                    match result {
+                        Ok(detail) => {
+                            self.popup_scroll = 0;
+                            self.popup = Popup::JobDetail(detail);
+                        }
+                        Err(e) => {
+                            self.popup = Popup::None;
+                            self.set_status(format!("scontrol error: {e}"));
+                        }
+                    }
+                }
+                Response::Log {
+                    seq,
+                    job_id,
+                    kind,
+                    result,
+                } => {
+                    if seq != self.log_seq {
+                        continue;
+                    }
+                    self.log_in_flight = false;
+                    let error = match result {
+                        Ok(tail) => {
+                            if let Popup::LogView(view) = &mut self.popup
+                                && view.job_id == job_id
+                                && view.kind == kind
+                            {
+                                view.apply_tail(tail);
+                            }
+                            None
+                        }
+                        Err(error) => {
+                            if let Popup::LogView(view) = &mut self.popup
+                                && view.job_id == job_id
+                                && view.kind == kind
+                            {
+                                view.apply_error(error.clone());
+                            }
+                            Some(error)
+                        }
+                    };
+                    if let Some(error) = error {
+                        self.set_status(format!("Log error: {error}"));
+                    }
+                }
+                Response::CancelJob {
+                    seq,
+                    job_id,
+                    result,
+                } => {
+                    if seq != self.cancel_seq {
+                        continue;
+                    }
+                    self.popup = Popup::None;
+                    match result {
+                        Ok(()) => {
+                            self.set_status(format!("Job {job_id} cancelled"));
+                            self.refresh_jobs();
+                        }
+                        Err(e) => self.set_status(format!("Cancel failed: {e}")),
+                    }
+                }
+                Response::SubmitJob { seq, result } => {
+                    if seq != self.submit_seq {
+                        continue;
+                    }
+                    match result {
+                        Ok(message) => {
+                            self.popup = Popup::SubmitResult {
+                                success: true,
+                                message,
+                            };
+                            self.refresh_jobs();
+                        }
+                        Err(message) => {
+                            self.popup = Popup::SubmitResult {
+                                success: false,
+                                message,
+                            };
+                        }
                     }
                 }
             }
@@ -1277,15 +1406,15 @@ impl App {
                 KeyCode::Char('y') => {
                     if let Popup::ConfirmCancel { ref job_id } = self.popup {
                         let jid = job_id.clone();
-                        match slurm::cancel_job(&jid) {
-                            Ok(()) => {
-                                self.set_status(format!("Job {} cancelled", jid));
-                                self.refresh_jobs();
-                            }
-                            Err(e) => self.set_status(format!("Cancel failed: {}", e)),
-                        }
+                        self.cancel_seq = self.cancel_seq.wrapping_add(1);
+                        self.worker.send(Request::CancelJob {
+                            seq: self.cancel_seq,
+                            job_id: jid.clone(),
+                        });
+                        self.popup = Popup::Working {
+                            message: format!("Cancelling job {jid}…"),
+                        };
                     }
-                    self.popup = Popup::None;
                 }
                 KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => {
                     self.popup = Popup::None;
@@ -1293,21 +1422,16 @@ impl App {
                 _ => {}
             },
             Popup::SubmitConfirm => match key.code {
-                KeyCode::Char('y') => match slurm::submit_job(&self.submit_form) {
-                    Ok(msg) => {
-                        self.popup = Popup::SubmitResult {
-                            success: true,
-                            message: msg,
-                        };
-                        self.refresh_jobs();
-                    }
-                    Err(e) => {
-                        self.popup = Popup::SubmitResult {
-                            success: false,
-                            message: e,
-                        };
-                    }
-                },
+                KeyCode::Char('y') => {
+                    self.submit_seq = self.submit_seq.wrapping_add(1);
+                    self.worker.send(Request::SubmitJob {
+                        seq: self.submit_seq,
+                        form: Box::new(self.submit_form.clone()),
+                    });
+                    self.popup = Popup::Working {
+                        message: "Submitting job…".to_string(),
+                    };
+                }
                 KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => {
                     self.popup = Popup::None;
                 }
@@ -1352,6 +1476,7 @@ impl App {
                 }
                 _ => {}
             },
+            Popup::Working { .. } => {}
             Popup::LogView(_) => {
                 let line_count = if let Popup::LogView(ref v) = self.popup {
                     v.line_count()
@@ -1414,9 +1539,7 @@ impl App {
                         }
                     }
                     KeyCode::Char('r') => {
-                        if let Popup::LogView(ref mut v) = self.popup {
-                            v.reload();
-                        }
+                        self.refresh_log_view();
                     }
                     KeyCode::Char('f') => {
                         if let Popup::LogView(ref mut v) = self.popup {
@@ -1427,6 +1550,8 @@ impl App {
                         if let Popup::LogView(ref mut v) = self.popup {
                             v.toggle_kind();
                         }
+                        self.log_in_flight = false;
+                        self.refresh_log_view();
                     }
                     _ => {}
                 }
@@ -1672,14 +1797,7 @@ impl App {
                 if let Some(selected) = self.jobs_table_state.selected() {
                     let filtered = self.filtered_jobs();
                     if let Some(job) = filtered.get(selected) {
-                        let job_id = job.job_id.clone();
-                        match slurm::fetch_job_detail(&job_id) {
-                            Ok(detail) => {
-                                self.popup_scroll = 0;
-                                self.popup = Popup::JobDetail(detail);
-                            }
-                            Err(e) => self.set_status(format!("scontrol error: {}", e)),
-                        }
+                        self.request_job_detail(job.job_id.clone());
                     }
                 }
             }
@@ -1759,6 +1877,8 @@ impl App {
 
     fn open_log_view(&mut self, job_id: String, kind: LogKind) {
         self.popup = Popup::LogView(LogView::new(job_id, kind));
+        self.log_in_flight = false;
+        self.refresh_log_view();
     }
 
     fn on_key_nodes(&mut self, key: KeyEvent) {
@@ -1983,14 +2103,7 @@ impl App {
                 if let Some(selected) = self.history_table_state.selected() {
                     let filtered = self.filtered_history();
                     if let Some(entry) = filtered.get(selected) {
-                        let job_id = entry.job_id.clone();
-                        match slurm::fetch_job_detail(&job_id) {
-                            Ok(detail) => {
-                                self.popup_scroll = 0;
-                                self.popup = Popup::JobDetail(detail);
-                            }
-                            Err(e) => self.set_status(format!("scontrol error: {}", e)),
-                        }
+                        self.request_job_detail(entry.job_id.clone());
                     }
                 }
             }
