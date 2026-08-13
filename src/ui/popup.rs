@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Row, Table, Wrap},
 };
 
-use crate::app::{FilePicker, LogView, ThemePicker};
+use crate::app::{FilePicker, JobActionMenu, LogView, ThemePicker};
 use crate::colors;
 use crate::slurm::JobDetail;
 
@@ -86,6 +86,62 @@ pub fn render_job_detail(frame: &mut Frame, area: Rect, detail: &JobDetail, scro
 
     let table = Table::new(visible_rows, widths);
     frame.render_widget(table, inner);
+}
+
+pub fn render_job_actions(frame: &mut Frame, area: Rect, menu: &JobActionMenu) {
+    let height = menu.entries.len().saturating_add(2) as u16;
+    let popup_area = small_centered_rect(62, height, area);
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(colors::blue()))
+        .title(Span::styled(
+            format!(" Job {} [{}] ", menu.job_id, menu.state),
+            Style::default()
+                .fg(colors::blue())
+                .add_modifier(Modifier::BOLD),
+        ))
+        .title_bottom(
+            Line::from(Span::styled(
+                " j/k:select  enter:confirm  q:close ",
+                Style::default().fg(colors::dark5()),
+            ))
+            .right_aligned(),
+        )
+        .style(Style::default().fg(colors::fg()).bg(colors::bg_dark()));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let width = inner.width as usize;
+    let lines: Vec<Line> = menu
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let marker = if index == menu.selected { "› " } else { "  " };
+            let label = if let Some(reason) = entry.disabled_reason {
+                format!("{marker}{} ({reason})", entry.action.label())
+            } else {
+                format!("{marker}{}", entry.action.label())
+            };
+            let display = format!("{label:<width$}");
+            let style = if !entry.enabled {
+                Style::default().fg(colors::comment())
+            } else if index == menu.selected {
+                Style::default()
+                    .fg(colors::purple())
+                    .bg(colors::bg_highlight())
+                    .add_modifier(Modifier::BOLD)
+            } else if matches!(entry.action, crate::app::JobMenuAction::Cancel) {
+                Style::default().fg(colors::red())
+            } else {
+                Style::default().fg(colors::fg())
+            };
+            Line::from(Span::styled(display, style))
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 pub fn render_confirm(frame: &mut Frame, area: Rect, message: &str) {

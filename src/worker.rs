@@ -2,7 +2,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
 use crate::slurm::{
-    self, HistoryEntry, Job, JobDetail, LogKind, LogTail, PartitionInfo, SubmitForm,
+    self, HistoryEntry, Job, JobAction, JobDetail, LogKind, LogTail, PartitionInfo, SubmitForm,
 };
 
 #[allow(clippy::enum_variant_names)]
@@ -25,6 +25,11 @@ pub enum Request {
     CancelJob {
         seq: u64,
         job_id: String,
+    },
+    ExecuteJobAction {
+        seq: u64,
+        job_id: String,
+        action: JobAction,
     },
     SubmitJob {
         seq: u64,
@@ -52,6 +57,12 @@ pub enum Response {
         job_id: String,
         result: Result<(), String>,
     },
+    JobAction {
+        seq: u64,
+        job_id: String,
+        action: JobAction,
+        result: Result<(), String>,
+    },
     SubmitJob {
         seq: u64,
         result: Result<String, String>,
@@ -66,6 +77,7 @@ pub struct Worker {
     job_detail_tx: Sender<Request>,
     log_tx: Sender<Request>,
     cancel_tx: Sender<Request>,
+    job_action_tx: Sender<Request>,
     submit_tx: Sender<Request>,
     rx: Receiver<Response>,
 }
@@ -81,6 +93,7 @@ impl Worker {
         let job_detail_tx = spawn_worker(resp_tx.clone());
         let log_tx = spawn_worker(resp_tx.clone());
         let cancel_tx = spawn_worker(resp_tx.clone());
+        let job_action_tx = spawn_worker(resp_tx.clone());
         let submit_tx = spawn_worker(resp_tx);
 
         Self {
@@ -91,6 +104,7 @@ impl Worker {
             job_detail_tx,
             log_tx,
             cancel_tx,
+            job_action_tx,
             submit_tx,
             rx: resp_rx,
         }
@@ -105,6 +119,7 @@ impl Worker {
             Request::FetchJobDetail { .. } => self.job_detail_tx.send(req),
             Request::FetchLog { .. } => self.log_tx.send(req),
             Request::CancelJob { .. } => self.cancel_tx.send(req),
+            Request::ExecuteJobAction { .. } => self.job_action_tx.send(req),
             Request::SubmitJob { .. } => self.submit_tx.send(req),
         };
     }
@@ -159,6 +174,16 @@ fn run(rx: Receiver<Request>, tx: Sender<Response>) {
                 seq,
                 result: slurm::cancel_job(&job_id),
                 job_id,
+            },
+            Request::ExecuteJobAction {
+                seq,
+                job_id,
+                action,
+            } => Response::JobAction {
+                seq,
+                result: slurm::execute_job_action(&job_id, action),
+                job_id,
+                action,
             },
             Request::SubmitJob { seq, form } => Response::SubmitJob {
                 seq,

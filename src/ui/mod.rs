@@ -39,6 +39,23 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Popup::JobDetail(detail) => {
             popup::render_job_detail(frame, frame.area(), detail, app.popup_scroll)
         }
+        Popup::JobActions(menu) => {
+            popup::render_job_actions(frame, frame.area(), menu);
+        }
+        Popup::ConfirmJobAction { job_id, action } => {
+            let message = match action {
+                crate::slurm::JobAction::Stop => {
+                    format!("Stop job {}? CPUs, GPUs, and memory stay allocated.", job_id)
+                }
+                crate::slurm::JobAction::Continue => format!("Continue job {}?", job_id),
+                _ => format!("{} job {}?", action.label(), job_id),
+            };
+            popup::render_confirm(
+                frame,
+                frame.area(),
+                &message,
+            );
+        }
         Popup::ConfirmCancel { job_id } => {
             popup::render_confirm(frame, frame.area(), &format!("Cancel job {}?", job_id));
         }
@@ -123,6 +140,8 @@ fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
                     desc_span(":Out  "),
                     key_span("O"),
                     desc_span(":Err  "),
+                    key_span("a"),
+                    desc_span(":Actions  "),
                     key_span("d"),
                     desc_span(":Cancel  "),
                     key_span("/"),

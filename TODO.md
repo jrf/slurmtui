@@ -32,5 +32,6 @@
 - [x] Log file viewer with stdout/stderr switching and follow mode #feature
 - [x] Non-blocking Slurm actions with bounded command execution #improvement
 - [x] Runtime config for refresh, idle pause, defaults, log follow, and command timeout #feature
+- [x] State-aware hold, release, requeue, stop, continue, signal, and cancel job actions #feature
 
 ## Scrapped

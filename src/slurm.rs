@@ -59,6 +59,59 @@ pub struct JobDetail {
     pub fields: Vec<(String, String)>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobAction {
+    Hold,
+    Release,
+    Requeue,
+    Stop,
+    Continue,
+    SignalUsr1,
+    SignalUsr2,
+    SignalTerm,
+}
+
+impl JobAction {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Hold => "Hold",
+            Self::Release => "Release",
+            Self::Requeue => "Requeue",
+            Self::Stop => "Stop (keep resources allocated)",
+            Self::Continue => "Continue stopped job",
+            Self::SignalUsr1 => "Signal USR1 (batch script)",
+            Self::SignalUsr2 => "Signal USR2 (batch script)",
+            Self::SignalTerm => "Signal TERM (script + children)",
+        }
+    }
+
+    pub fn progress_label(self) -> &'static str {
+        match self {
+            Self::Hold => "Holding",
+            Self::Release => "Releasing",
+            Self::Requeue => "Requeuing",
+            Self::Stop => "Stopping",
+            Self::Continue => "Continuing",
+            Self::SignalUsr1 => "Sending USR1 to",
+            Self::SignalUsr2 => "Sending USR2 to",
+            Self::SignalTerm => "Sending TERM to",
+        }
+    }
+
+    pub fn success_label(self) -> &'static str {
+        match self {
+            Self::Hold => "held",
+            Self::Release => "released",
+            Self::Requeue => "requeued",
+            Self::Stop => "stopped; resources remain allocated",
+            Self::Continue => "continued",
+            Self::SignalUsr1 => "received USR1",
+            Self::SignalUsr2 => "received USR2",
+            Self::SignalTerm => "received TERM",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SubmitForm {
     pub job_name: String,
@@ -723,6 +776,35 @@ pub fn cancel_job(job_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn execute_job_action(job_id: &str, action: JobAction) -> Result<(), String> {
+    let (command, args) = job_action_command(job_id, action);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_command(command, &args)?;
+    Ok(())
+}
+
+fn job_action_command(job_id: &str, action: JobAction) -> (&'static str, Vec<String>) {
+    let args = match action {
+        JobAction::Hold => vec!["hold", job_id],
+        JobAction::Release => vec!["release", job_id],
+        JobAction::Requeue => vec!["requeue", job_id],
+        JobAction::Stop => vec!["--signal=STOP", "--full", job_id],
+        JobAction::Continue => vec!["--signal=CONT", "--full", job_id],
+        JobAction::SignalUsr1 => vec!["--signal=USR1", "--batch", job_id],
+        JobAction::SignalUsr2 => vec!["--signal=USR2", "--batch", job_id],
+        JobAction::SignalTerm => vec!["--signal=TERM", "--full", job_id],
+    };
+    let command = match action {
+        JobAction::Hold | JobAction::Release | JobAction::Requeue => "scontrol",
+        JobAction::Stop
+        | JobAction::Continue
+        | JobAction::SignalUsr1
+        | JobAction::SignalUsr2
+        | JobAction::SignalTerm => "scancel",
+    };
+    (command, args.into_iter().map(str::to_string).collect())
+}
+
 pub fn submit_job(form: &SubmitForm) -> Result<String, String> {
     if form.script_path.is_empty() {
         return Err("Script path is required".to_string());
@@ -966,6 +1048,42 @@ mod tests {
         assert_eq!(shell_quote("my job"), "'my job'");
         assert_eq!(shell_quote(""), "''");
         assert_eq!(shell_quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn job_actions_map_to_expected_slurm_commands() {
+        assert_eq!(
+            job_action_command("42", JobAction::Hold),
+            ("scontrol", v(&["hold", "42"]))
+        );
+        assert_eq!(
+            job_action_command("42", JobAction::Release),
+            ("scontrol", v(&["release", "42"]))
+        );
+        assert_eq!(
+            job_action_command("42", JobAction::Requeue),
+            ("scontrol", v(&["requeue", "42"]))
+        );
+        assert_eq!(
+            job_action_command("42", JobAction::Stop),
+            ("scancel", v(&["--signal=STOP", "--full", "42"]))
+        );
+        assert_eq!(
+            job_action_command("42", JobAction::Continue),
+            ("scancel", v(&["--signal=CONT", "--full", "42"]))
+        );
+        assert_eq!(
+            job_action_command("42", JobAction::SignalUsr1),
+            ("scancel", v(&["--signal=USR1", "--batch", "42"]))
+        );
+        assert_eq!(
+            job_action_command("42", JobAction::SignalUsr2),
+            ("scancel", v(&["--signal=USR2", "--batch", "42"]))
+        );
+        assert_eq!(
+            job_action_command("42", JobAction::SignalTerm),
+            ("scancel", v(&["--signal=TERM", "--full", "42"]))
+        );
     }
 
     #[cfg(unix)]

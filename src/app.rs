@@ -9,7 +9,7 @@ use ratatui::widgets::TableState;
 use crate::colors;
 use crate::config::{Config as AppConfig, HistoryRangeSetting, JobFilterSetting};
 use crate::slurm::{
-    self, HistoryEntry, Job, JobDetail, LogKind, LogTail, PartitionInfo, SubmitForm,
+    self, HistoryEntry, Job, JobAction, JobDetail, LogKind, LogTail, PartitionInfo, SubmitForm,
 };
 use crate::worker::{Request, Response, Worker};
 
@@ -504,9 +504,157 @@ impl ThemePicker {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobMenuAction {
+    Control(JobAction),
+    Cancel,
+}
+
+impl JobMenuAction {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Control(action) => action.label(),
+            Self::Cancel => "Cancel",
+        }
+    }
+}
+
+pub struct JobActionEntry {
+    pub action: JobMenuAction,
+    pub enabled: bool,
+    pub disabled_reason: Option<&'static str>,
+}
+
+pub struct JobActionMenu {
+    pub job_id: String,
+    pub state: String,
+    pub entries: Vec<JobActionEntry>,
+    pub selected: usize,
+}
+
+impl JobActionMenu {
+    fn new(job: &Job) -> Self {
+        let entries = job_action_entries(&job.state, &job.reason_or_nodelist);
+        let selected = entries.iter().position(|entry| entry.enabled).unwrap_or(0);
+        Self {
+            job_id: job.job_id.clone(),
+            state: job.state.clone(),
+            entries,
+            selected,
+        }
+    }
+
+    fn move_down(&mut self) {
+        self.move_selection(1);
+    }
+
+    fn move_up(&mut self) {
+        self.move_selection(self.entries.len().saturating_sub(1));
+    }
+
+    fn move_selection(&mut self, offset: usize) {
+        if self.entries.is_empty() {
+            return;
+        }
+        for _ in 0..self.entries.len() {
+            self.selected = (self.selected + offset) % self.entries.len();
+            if self.entries[self.selected].enabled {
+                break;
+            }
+        }
+    }
+
+    fn selected_action(&self) -> Option<JobMenuAction> {
+        self.entries
+            .get(self.selected)
+            .filter(|entry| entry.enabled)
+            .map(|entry| entry.action)
+    }
+}
+
+fn job_action_entries(state: &str, reason: &str) -> Vec<JobActionEntry> {
+    let state = state.trim().to_ascii_uppercase();
+    let pending = state == "PENDING";
+    let user_held = pending && reason.contains("JobHeldUser");
+    let held = reason.contains("JobHeld");
+    let requeueable = matches!(state.as_str(), "RUNNING" | "SUSPENDED" | "STOPPED");
+    let stoppable = state == "RUNNING";
+    let continuable = state == "STOPPED";
+    let signalable = matches!(
+        state.as_str(),
+        "RUNNING" | "COMPLETING" | "SUSPENDED" | "STOPPED"
+    );
+    let cancellable = matches!(
+        state.as_str(),
+        "PENDING" | "CONFIGURING" | "RUNNING" | "COMPLETING" | "SUSPENDED" | "STOPPED"
+    );
+
+    vec![
+        action_entry(
+            JobMenuAction::Control(JobAction::Hold),
+            pending && !held,
+            "available for unheld pending jobs",
+        ),
+        action_entry(
+            JobMenuAction::Control(JobAction::Release),
+            user_held,
+            "available for user-held pending jobs",
+        ),
+        action_entry(
+            JobMenuAction::Control(JobAction::Requeue),
+            requeueable,
+            "available for running or suspended jobs",
+        ),
+        action_entry(
+            JobMenuAction::Control(JobAction::Stop),
+            stoppable,
+            "available for running jobs",
+        ),
+        action_entry(
+            JobMenuAction::Control(JobAction::Continue),
+            continuable,
+            "available for stopped jobs",
+        ),
+        action_entry(
+            JobMenuAction::Control(JobAction::SignalUsr1),
+            signalable,
+            "available for active jobs",
+        ),
+        action_entry(
+            JobMenuAction::Control(JobAction::SignalUsr2),
+            signalable,
+            "available for active jobs",
+        ),
+        action_entry(
+            JobMenuAction::Control(JobAction::SignalTerm),
+            signalable,
+            "available for active jobs",
+        ),
+        action_entry(
+            JobMenuAction::Cancel,
+            cancellable,
+            "available for active jobs",
+        ),
+    ]
+}
+
+fn action_entry(
+    action: JobMenuAction,
+    enabled: bool,
+    disabled_reason: &'static str,
+) -> JobActionEntry {
+    JobActionEntry {
+        action,
+        enabled,
+        disabled_reason: (!enabled).then_some(disabled_reason),
+    }
+}
+
 pub enum Popup {
     None,
     JobDetail(JobDetail),
+    JobActions(JobActionMenu),
+    ConfirmJobAction { job_id: String, action: JobAction },
     ConfirmCancel { job_id: String },
     SubmitConfirm,
     SubmitResult { success: bool, message: String },
@@ -914,6 +1062,7 @@ pub struct App {
     pub job_detail_seq: u64,
     pub log_seq: u64,
     pub cancel_seq: u64,
+    pub job_action_seq: u64,
     pub submit_seq: u64,
     pub jobs_in_flight: bool,
     pub partitions_in_flight: bool,
@@ -986,6 +1135,7 @@ impl App {
             job_detail_seq: 0,
             log_seq: 0,
             cancel_seq: 0,
+            job_action_seq: 0,
             submit_seq: 0,
             jobs_in_flight: false,
             partitions_in_flight: false,
@@ -1259,6 +1409,24 @@ impl App {
                         Err(e) => self.set_status(format!("Cancel failed: {e}")),
                     }
                 }
+                Response::JobAction {
+                    seq,
+                    job_id,
+                    action,
+                    result,
+                } => {
+                    if seq != self.job_action_seq {
+                        continue;
+                    }
+                    self.popup = Popup::None;
+                    match result {
+                        Ok(()) => {
+                            self.set_status(format!("Job {job_id} {}", action.success_label()));
+                            self.refresh_jobs();
+                        }
+                        Err(e) => self.set_status(format!("{} failed: {e}", action.label())),
+                    }
+                }
                 Response::SubmitJob { seq, result } => {
                     if seq != self.submit_seq {
                         continue;
@@ -1434,6 +1602,61 @@ impl App {
 
     fn on_key_popup(&mut self, key: KeyEvent) {
         match &self.popup {
+            Popup::JobActions(_) => match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => self.popup = Popup::None,
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if let Popup::JobActions(menu) = &mut self.popup {
+                        menu.move_down();
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if let Popup::JobActions(menu) = &mut self.popup {
+                        menu.move_up();
+                    }
+                }
+                KeyCode::Enter => {
+                    let selected = match &self.popup {
+                        Popup::JobActions(menu) => menu
+                            .selected_action()
+                            .map(|action| (menu.job_id.clone(), action)),
+                        _ => None,
+                    };
+                    if let Some((job_id, action)) = selected {
+                        self.popup = match action {
+                            JobMenuAction::Control(action) => {
+                                Popup::ConfirmJobAction { job_id, action }
+                            }
+                            JobMenuAction::Cancel => Popup::ConfirmCancel { job_id },
+                        };
+                    }
+                }
+                _ => {}
+            },
+            Popup::ConfirmJobAction { .. } => match key.code {
+                KeyCode::Char('y') => {
+                    let selected = match &self.popup {
+                        Popup::ConfirmJobAction { job_id, action } => {
+                            Some((job_id.clone(), *action))
+                        }
+                        _ => None,
+                    };
+                    if let Some((job_id, action)) = selected {
+                        self.job_action_seq = self.job_action_seq.wrapping_add(1);
+                        self.worker.send(Request::ExecuteJobAction {
+                            seq: self.job_action_seq,
+                            job_id: job_id.clone(),
+                            action,
+                        });
+                        self.popup = Popup::Working {
+                            message: format!("{} job {job_id}…", action.progress_label()),
+                        };
+                    }
+                }
+                KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => {
+                    self.popup = Popup::None;
+                }
+                _ => {}
+            },
             Popup::ConfirmCancel { .. } => match key.code {
                 KeyCode::Char('y') => {
                     if let Popup::ConfirmCancel { ref job_id } = self.popup {
@@ -1840,6 +2063,14 @@ impl App {
                         self.popup = Popup::ConfirmCancel {
                             job_id: job.job_id.clone(),
                         };
+                    }
+                }
+            }
+            KeyCode::Char('a') => {
+                if let Some(selected) = self.jobs_table_state.selected() {
+                    let filtered = self.filtered_jobs();
+                    if let Some(job) = filtered.get(selected) {
+                        self.popup = Popup::JobActions(JobActionMenu::new(job));
                     }
                 }
             }
@@ -2294,5 +2525,42 @@ mod tests {
             history_date_args(7),
             vec!["-d", "7 days ago", "+%Y-%m-%d"]
         );
+    }
+
+    #[test]
+    fn pending_job_actions_distinguish_unheld_and_user_held_jobs() {
+        let pending = job_action_entries("PENDING", "Resources");
+        assert!(pending[0].enabled);
+        assert!(!pending[1].enabled);
+        assert!(!pending[2].enabled);
+        assert!(pending[8].enabled);
+
+        let held = job_action_entries("PENDING", "JobHeldUser");
+        assert!(!held[0].enabled);
+        assert!(held[1].enabled);
+
+        let admin_held = job_action_entries("PENDING", "JobHeldAdmin");
+        assert!(!admin_held[0].enabled);
+        assert!(!admin_held[1].enabled);
+    }
+
+    #[test]
+    fn running_job_actions_enable_requeue_signals_and_cancel() {
+        let entries = job_action_entries("RUNNING", "node01");
+        assert!(!entries[0].enabled);
+        assert!(!entries[1].enabled);
+        assert!(entries[2].enabled);
+        assert!(entries[3].enabled);
+        assert!(!entries[4].enabled);
+        assert!(entries[5..].iter().all(|entry| entry.enabled));
+    }
+
+    #[test]
+    fn stopped_job_actions_enable_continue_but_not_stop() {
+        let entries = job_action_entries("STOPPED", "node01");
+        assert!(entries[2].enabled);
+        assert!(!entries[3].enabled);
+        assert!(entries[4].enabled);
+        assert!(entries[5..].iter().all(|entry| entry.enabled));
     }
 }
