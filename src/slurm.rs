@@ -658,13 +658,21 @@ pub fn fetch_log_path(job_id: &str, kind: LogKind) -> Result<String, String> {
         LogKind::StdErr => "StdErr",
     };
     if let Ok(detail) = fetch_job_detail(job_id) {
+        let mut work_dir = None;
+        let mut log_path = None;
         for (k, v) in &detail.fields {
+            if k == "WorkDir" && !v.is_empty() && v != "(null)" {
+                work_dir = Some(v.as_str());
+            }
             if k == key && !v.is_empty() && v != "(null)" {
-                return Ok(v.clone());
+                log_path = Some(v.as_str());
             }
         }
+        if let Some(path) = log_path {
+            return Ok(resolve_log_path(path, work_dir));
+        }
     }
-    let format_arg = format!("--format=JobID,{}", key);
+    let format_arg = format!("--format=JobID,{},WorkDir", key);
     let job_arg = format!("--jobs={}", job_id);
     let output = run_command(
         "sacct",
@@ -681,10 +689,27 @@ pub fn fetch_log_path(job_id: &str, kind: LogKind) -> Result<String, String> {
         }
         let path = parts[1].trim();
         if !path.is_empty() && path != "(null)" {
-            return Ok(path.to_string());
+            let work_dir = parts.get(2).map(|w| w.trim()).filter(|w| {
+                !w.is_empty() && *w != "(null)"
+            });
+            return Ok(resolve_log_path(path, work_dir));
         }
     }
     Err(format!("no {} path found for job {}", key, job_id))
+}
+
+/// Resolve a Slurm-reported log path. Relative paths are joined against the
+/// job's working directory so files written into subdirectories (e.g. from
+/// `#SBATCH --output=logs/%j.out`) can still be found.
+fn resolve_log_path(path: &str, work_dir: Option<&str>) -> String {
+    let candidate = Path::new(path);
+    if candidate.is_absolute() {
+        return path.to_string();
+    }
+    if let Some(dir) = work_dir {
+        return Path::new(dir).join(candidate).to_string_lossy().into_owned();
+    }
+    path.to_string()
 }
 
 pub fn read_log_tail(path: &Path, max_lines: usize, max_bytes: u64) -> Result<String, String> {
