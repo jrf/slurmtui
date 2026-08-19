@@ -88,27 +88,28 @@ fn render_tab_bar(frame: &mut Frame, area: Rect, app: &App) {
         .map(|(i, tab)| Line::from(format!(" {} {} ", i + 1, tab.title())))
         .collect();
 
-    let right_text = app.status_text().unwrap_or_default();
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(colors::fg_gutter()))
+        .title(Span::styled(
+            " slurmtui ",
+            Style::default()
+                .fg(colors::blue())
+                .add_modifier(Modifier::BOLD),
+        ));
+
+    if let Some(right_text) = app.status_text().filter(|t| !t.is_empty()) {
+        block = block.title_bottom(
+            Line::from(Span::styled(
+                format!(" {} ", right_text),
+                Style::default().fg(colors::dark5()),
+            ))
+            .right_aligned(),
+        );
+    }
 
     let tabs = Tabs::new(titles)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::fg_gutter()))
-                .title(Span::styled(
-                    " slurmtui ",
-                    Style::default()
-                        .fg(colors::blue())
-                        .add_modifier(Modifier::BOLD),
-                ))
-                .title_bottom(
-                    Line::from(Span::styled(
-                        format!(" {} ", right_text),
-                        Style::default().fg(colors::dark5()),
-                    ))
-                    .right_aligned(),
-                ),
-        )
+        .block(block)
         .select(app.active_tab.index())
         .style(Style::default().fg(colors::dark5()))
         .highlight_style(
