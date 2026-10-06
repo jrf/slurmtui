@@ -7,7 +7,7 @@ A terminal UI for managing Slurm HPC cluster jobs, built with Rust.
 - **Jobs** — View, filter, inspect, hold, release, requeue, stop, continue, signal, and cancel jobs
 - **Nodes** — View partition and node status across the cluster
 - **Submit** — Build and submit jobs with a form interface and live command preview
-- **History** — Browse completed job history with time-range filtering
+- **History** — Browse completed job history with time-range filtering, accounting-backed details, and stdout/stderr viewing
 - **Responsive operations** — Run Slurm commands outside the UI thread with a configurable timeout
 
 ## Install
@@ -79,7 +79,14 @@ add a `[slurm]` section with `background`, `selection`,
 | `Ctrl+s` | Submit job (Submit tab) |
 | `q` | Quit |
 
+On Jobs and History, `o` opens stdout and `O` opens stderr.
+When a completed job has left the controller, details come from `sacct`.
+Archived log filenames are expanded by Slurm (including `%j`, `%x`, and array
+patterns `%A_%a`); relative paths use the job's working directory. If stderr was
+not configured separately, it shares stdout. Log files must still exist and be
+readable from the machine running SlurmTUI.
+
 ## Requirements
 
-- Slurm CLI tools (`squeue`, `sinfo`, `sacct`, `scontrol`, `sbatch`, `scancel`)
+- Slurm CLI tools (`squeue`, `sinfo`, `sacct`, `scontrol`, `sbatch`, `scancel`); archived logs require `sacct --expand-pattern` support
 - A terminal with Unicode support

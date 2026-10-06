@@ -611,6 +611,13 @@ fn parse_history_line(line: &str) -> Option<HistoryEntry> {
 }
 
 pub fn fetch_job_detail(job_id: &str) -> Result<JobDetail, String> {
+    fetch_controller_job_detail(job_id).or_else(|controller_error| {
+        fetch_accounting_job_detail(job_id)
+            .map_err(|accounting_error| format!("{controller_error}; {accounting_error}"))
+    })
+}
+
+fn fetch_controller_job_detail(job_id: &str) -> Result<JobDetail, String> {
     let output = run_command("scontrol", &["show", "job", job_id])?;
     let mut fields = Vec::new();
     for line in output.lines() {
@@ -623,6 +630,51 @@ pub fn fetch_job_detail(job_id: &str) -> Result<JobDetail, String> {
         }
     }
     Ok(JobDetail { fields })
+}
+
+const ACCOUNTING_DETAIL_FIELDS: &str = "JobID,JobName,User,Account,Partition,QOS,State,ExitCode,DerivedExitCode,Submit,Eligible,Start,End,Elapsed,Timelimit,AllocCPUS,AllocNodes,ReqMem,ReqTRES,AllocTRES,NodeList,WorkDir,StdOut,StdErr";
+// sacct does not escape delimiters in job names or paths; avoid printable pipes.
+const ACCOUNTING_DELIMITER: &str = "\x1f";
+
+fn fetch_accounting_job_detail(job_id: &str) -> Result<JobDetail, String> {
+    let format_arg = format!("--format={ACCOUNTING_DETAIL_FIELDS}");
+    let job_arg = format!("--jobs={job_id}");
+    let output = run_command(
+        "sacct",
+        &[
+            "--parsable2",
+            "--noheader",
+            "--allocations",
+            "--expand-pattern",
+            "--delimiter",
+            ACCOUNTING_DELIMITER,
+            &format_arg,
+            &job_arg,
+        ],
+    )?;
+    parse_accounting_job_detail(&output, job_id)
+}
+
+fn parse_accounting_job_detail(output: &str, job_id: &str) -> Result<JobDetail, String> {
+    for line in output.lines() {
+        let mut values = line.split(ACCOUNTING_DELIMITER);
+        if values.next() != Some(job_id) {
+            continue;
+        }
+        let mut fields = Vec::with_capacity(ACCOUNTING_DETAIL_FIELDS.split(',').count());
+        fields.push(("JobID".to_string(), job_id.to_string()));
+        for key in ACCOUNTING_DETAIL_FIELDS.split(',').skip(1) {
+            let value = values
+                .next()
+                .ok_or_else(|| format!("incomplete accounting record for job {job_id}"))?;
+            fields.push((key.to_string(), value.to_string()));
+        }
+        if values.next().is_some() {
+            return Err(format!("ambiguous accounting record for job {job_id}"));
+        }
+        return Ok(JobDetail { fields });
+    }
+    Err(format!("no accounting record found for job {job_id}"))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -653,49 +705,30 @@ impl LogKind {
 }
 
 pub fn fetch_log_path(job_id: &str, kind: LogKind) -> Result<String, String> {
-    let key = match kind {
-        LogKind::StdOut => "StdOut",
-        LogKind::StdErr => "StdErr",
+    if let Ok(detail) = fetch_controller_job_detail(job_id)
+        && let Some(path) = log_path_from_detail(&detail, kind)
+    {
+        return Ok(path);
+    }
+    let detail = fetch_accounting_job_detail(job_id)?;
+    log_path_from_detail(&detail, kind)
+        .ok_or_else(|| format!("no {} path found for job {job_id}", kind.label()))
+}
+
+fn log_path_from_detail(detail: &JobDetail, kind: LogKind) -> Option<String> {
+    let field = |key: &str| {
+        detail
+            .fields
+            .iter()
+            .find(|(k, v)| k == key && !v.is_empty() && v != "(null)")
+            .map(|(_, v)| v.as_str())
     };
-    if let Ok(detail) = fetch_job_detail(job_id) {
-        let mut work_dir = None;
-        let mut log_path = None;
-        for (k, v) in &detail.fields {
-            if k == "WorkDir" && !v.is_empty() && v != "(null)" {
-                work_dir = Some(v.as_str());
-            }
-            if k == key && !v.is_empty() && v != "(null)" {
-                log_path = Some(v.as_str());
-            }
-        }
-        if let Some(path) = log_path {
-            return Ok(resolve_log_path(path, work_dir));
-        }
-    }
-    let format_arg = format!("--format=JobID,{},WorkDir", key);
-    let job_arg = format!("--jobs={}", job_id);
-    let output = run_command(
-        "sacct",
-        &["--parsable2", "--noheader", &format_arg, &job_arg],
-    )?;
-    for line in output.lines() {
-        let parts: Vec<&str> = line.split('|').collect();
-        if parts.len() < 2 {
-            continue;
-        }
-        let id = parts[0];
-        if id.contains('.') {
-            continue;
-        }
-        let path = parts[1].trim();
-        if !path.is_empty() && path != "(null)" {
-            let work_dir = parts.get(2).map(|w| w.trim()).filter(|w| {
-                !w.is_empty() && *w != "(null)"
-            });
-            return Ok(resolve_log_path(path, work_dir));
-        }
-    }
-    Err(format!("no {} path found for job {}", key, job_id))
+    let path = match kind {
+        LogKind::StdOut => field("StdOut"),
+        // An unspecified stderr destination shares the batch job's stdout file.
+        LogKind::StdErr => field("StdErr").or_else(|| field("StdOut")),
+    }?;
+    Some(resolve_log_path(path, field("WorkDir")))
 }
 
 /// Resolve a Slurm-reported log path. Relative paths are joined against the
@@ -1177,5 +1210,98 @@ mod tests {
         assert_eq!(e.job_id, "123");
         assert_eq!(e.state, "COMPLETED");
         assert!(parse_history_line("1|2|3").is_none());
+    }
+
+    #[test]
+    fn accounting_detail_selects_exact_array_task_and_preserves_free_text() {
+        let record = [
+            "42_3",
+            "my | job",
+            "alice",
+            "project",
+            "gpu",
+            "shared",
+            "FAILED",
+            "1:0",
+            "1:0",
+            "2026-10-01T12:00:00",
+            "2026-10-01T12:00:00",
+            "2026-10-01T12:01:00",
+            "2026-10-01T12:02:00",
+            "00:01:00",
+            "00:10:00",
+            "4",
+            "1",
+            "8G",
+            "cpu=4",
+            "cpu=4",
+            "node01",
+            "/scratch/my | work",
+            "logs/my | job-42_3.out",
+            "",
+        ]
+        .join(ACCOUNTING_DELIMITER);
+        let output = format!("42_2\x1fwrong task\n42_3.batch\x1fwrong step\n{record}\n");
+        let detail = parse_accounting_job_detail(&output, "42_3").unwrap();
+        assert!(detail.fields.contains(&("JobName".into(), "my | job".into())));
+        assert_eq!(
+            parse_accounting_job_detail(&format!("{record}\x1fextra"), "42_3")
+                .err()
+                .as_deref(),
+            Some("ambiguous accounting record for job 42_3")
+        );
+        assert!(detail.fields.contains(&("State".into(), "FAILED".into())));
+        assert!(detail.fields.contains(&("ExitCode".into(), "1:0".into())));
+        assert_eq!(
+            log_path_from_detail(&detail, LogKind::StdOut).as_deref(),
+            Some("/scratch/my | work/logs/my | job-42_3.out")
+        );
+        assert_eq!(
+            log_path_from_detail(&detail, LogKind::StdErr).as_deref(),
+            Some("/scratch/my | work/logs/my | job-42_3.out")
+        );
+    }
+
+    #[test]
+    fn accounting_detail_rejects_missing_and_incomplete_records() {
+        assert_eq!(
+            parse_accounting_job_detail("42_2\x1fother\n42_3.batch\x1fstep\n", "42_3")
+                .err()
+                .as_deref(),
+            Some("no accounting record found for job 42_3")
+        );
+        assert_eq!(
+            parse_accounting_job_detail("42_3\x1fjob\x1falice", "42_3")
+                .err()
+                .as_deref(),
+            Some("incomplete accounting record for job 42_3")
+        );
+    }
+
+    #[test]
+    fn log_paths_keep_separate_stderr_and_handle_unset_destinations() {
+        let mut detail = JobDetail {
+            fields: vec![
+                ("WorkDir".into(), "/scratch/work".into()),
+                ("StdOut".into(), "/logs/42.out".into()),
+                ("StdErr".into(), "logs/42.err".into()),
+            ],
+        };
+        assert_eq!(
+            log_path_from_detail(&detail, LogKind::StdOut).as_deref(),
+            Some("/logs/42.out")
+        );
+        assert_eq!(
+            log_path_from_detail(&detail, LogKind::StdErr).as_deref(),
+            Some("/scratch/work/logs/42.err")
+        );
+        detail.fields[2].1 = "(null)".into();
+        assert_eq!(
+            log_path_from_detail(&detail, LogKind::StdErr).as_deref(),
+            Some("/logs/42.out")
+        );
+        detail.fields[1].1.clear();
+        assert_eq!(log_path_from_detail(&detail, LogKind::StdOut), None);
+        assert_eq!(log_path_from_detail(&detail, LogKind::StdErr), None);
     }
 }
